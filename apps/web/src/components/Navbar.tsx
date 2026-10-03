@@ -171,12 +171,20 @@ export const Navbar: React.FC = () => {
                 </button>
               </div>
             ) : (
-              <button
-                onClick={() => navigate('/login')}
-                className="text-xs font-semibold bg-agri-600 hover:bg-agri-700 text-white px-3 py-1.5 rounded-lg shadow-sm transition"
-              >
-                Sign In
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => navigate('/login')}
+                  className="text-xs font-semibold text-slate-700 hover:text-agri-800 hover:bg-slate-100 px-2.5 py-1.5 rounded-lg transition"
+                >
+                  Sign In
+                </button>
+                <button
+                  onClick={() => navigate('/signup')}
+                  className="text-xs font-bold bg-agri-600 hover:bg-agri-700 text-white px-3 py-1.5 rounded-lg shadow-sm transition"
+                >
+                  Sign Up
+                </button>
+              </div>
             )}
 
           </div>

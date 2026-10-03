@@ -114,12 +114,25 @@ export const LoginPage: React.FC = () => {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full flex items-center justify-center gap-2 bg-agri-700 hover:bg-agri-800 text-white font-bold py-3 rounded-2xl shadow transition"
+            className="w-full flex items-center justify-center gap-2 bg-agri-700 hover:bg-agri-800 text-white font-bold py-3.5 rounded-2xl shadow transition text-sm"
           >
             {submitting ? 'Signing in...' : 'Sign In'}
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>
+
+        {/* Link to Sign Up */}
+        <div className="text-center pt-1">
+          <p className="text-xs text-slate-600">
+            New to AgriEdge?{' '}
+            <Link
+              to="/signup"
+              className="font-bold text-agri-700 hover:text-agri-800 underline underline-offset-2"
+            >
+              Create a free account
+            </Link>
+          </p>
+        </div>
 
         {/* Quick Demo Mode Buttons */}
         <div className="pt-4 border-t border-slate-100 text-center space-y-2.5">

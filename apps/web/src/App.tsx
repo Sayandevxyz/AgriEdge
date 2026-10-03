@@ -12,6 +12,7 @@ import { VoiceQueryModal } from './components/VoiceQueryModal';
 // Pages
 import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
+import { SignupPage } from './pages/SignupPage';
 import { FarmerDashboard } from './pages/farmer/FarmerDashboard';
 import { CropAnalysisFlow } from './pages/farmer/CropAnalysisFlow';
 import { ScenarioSimulatorPage } from './pages/farmer/ScenarioSimulatorPage';
@@ -81,6 +82,7 @@ export const App: React.FC = () => {
                   <Routes>
                     <Route path="/" element={<RootRoute />} />
                     <Route path="/login" element={<LoginPage />} />
+                    <Route path="/signup" element={<SignupPage />} />
                     <Route path="/landing" element={<LandingPage />} />
                     
                     {/* Farmer Journeys */}
