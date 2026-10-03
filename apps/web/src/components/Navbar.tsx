@@ -39,40 +39,70 @@ export const Navbar: React.FC = () => {
           </Link>
 
           {/* Navigation Links based on role */}
-          <div className="hidden md:flex items-center gap-1 text-sm font-medium">
-            <Link
-              to="/farmer/dashboard"
-              className={`px-3 py-2 rounded-lg transition ${
-                location.pathname.startsWith('/farmer')
-                  ? 'bg-agri-50 text-agri-800 font-semibold'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              Farmer Experience
-            </Link>
+          {user && (
+            <div className="hidden md:flex items-center gap-1 text-sm font-medium">
+              {user.role === 'FARMER' && (
+                <>
+                  <Link
+                    to="/farmer/dashboard"
+                    className={`px-3 py-2 rounded-lg transition ${
+                      location.pathname === '/farmer/dashboard'
+                        ? 'bg-agri-50 text-agri-800 font-semibold'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    }`}
+                  >
+                    Farmer Dashboard
+                  </Link>
+                  <Link
+                    to="/farmer/analyze"
+                    className={`px-3 py-2 rounded-lg transition ${
+                      location.pathname.startsWith('/farmer/analyze')
+                        ? 'bg-agri-50 text-agri-800 font-semibold'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    }`}
+                  >
+                    Analyze Crop
+                  </Link>
+                  <Link
+                    to="/farmer/scenarios"
+                    className={`px-3 py-2 rounded-lg transition ${
+                      location.pathname.startsWith('/farmer/scenarios')
+                        ? 'bg-agri-50 text-agri-800 font-semibold'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    }`}
+                  >
+                    Water AI
+                  </Link>
+                </>
+              )}
 
-            <Link
-              to="/fpo/dashboard"
-              className={`px-3 py-2 rounded-lg transition ${
-                location.pathname.startsWith('/fpo')
-                  ? 'bg-agri-50 text-agri-800 font-semibold'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              FPO Intelligence
-            </Link>
+              {user.role === 'FPO_ADMIN' && (
+                <Link
+                  to="/fpo/dashboard"
+                  className={`px-3 py-2 rounded-lg transition ${
+                    location.pathname.startsWith('/fpo')
+                      ? 'bg-agri-50 text-agri-800 font-semibold'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  FPO Intelligence
+                </Link>
+              )}
 
-            <Link
-              to="/admin"
-              className={`px-3 py-2 rounded-lg transition ${
-                location.pathname.startsWith('/admin')
-                  ? 'bg-agri-50 text-agri-800 font-semibold'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              System Health
-            </Link>
-          </div>
+              {user.role === 'SYSTEM_ADMIN' && (
+                <Link
+                  to="/admin"
+                  className={`px-3 py-2 rounded-lg transition ${
+                    location.pathname.startsWith('/admin')
+                      ? 'bg-agri-50 text-agri-800 font-semibold'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  System Health
+                </Link>
+              )}
+            </div>
+          )}
 
           {/* Right Toolbar: Offline Status + Language Selector + User Info */}
           <div className="flex items-center gap-3">

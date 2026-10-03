@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { AdvisoryCard } from '../../components/AdvisoryCard';
@@ -24,6 +24,10 @@ export const FarmerDashboard: React.FC = () => {
   const { user } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
 
   const [advisory, setAdvisory] = useState<AdvisoryPayload | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -79,7 +83,7 @@ export const FarmerDashboard: React.FC = () => {
             {t('farm_intelligence_today')}
           </span>
           <h1 className="text-2xl font-black tracking-tight">
-            {t('greeting')}, {user?.full_name?.split(' ')[0] || 'Farmer Ramesh'}!
+            {t('greeting')}, {user?.full_name ? user.full_name.split(' ')[0] : 'Farmer'}!
           </h1>
           <div className="flex items-center gap-3 text-xs text-agri-200 mt-1">
             <span className="flex items-center gap-1">

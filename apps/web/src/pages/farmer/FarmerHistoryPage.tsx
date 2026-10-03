@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { History, Droplets, Sprout, Calendar, ArrowRight, RefreshCw } from 'lucide-react';
 
 export const FarmerHistoryPage: React.FC = () => {
-  const { token } = useAuth();
+  const { user, token } = useAuth();
   const { t } = useLanguage();
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 

@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import {
   Terminal,
   Activity,
@@ -13,6 +15,11 @@ import {
 } from 'lucide-react';
 
 export const AdminSystemPage: React.FC = () => {
+  const { user } = useAuth();
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
   const [systemData, setSystemData] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
 

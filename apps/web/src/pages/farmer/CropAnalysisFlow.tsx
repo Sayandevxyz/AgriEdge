@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../context/AuthContext';
 import { AdvisoryCard } from '../../components/AdvisoryCard';
@@ -21,8 +21,12 @@ import {
 } from 'lucide-react';
 
 export const CropAnalysisFlow: React.FC = () => {
+  const { user, token } = useAuth();
   const { t } = useLanguage();
-  const { token } = useAuth();
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
   const navigate = useNavigate();
 
   const [step, setStep] = useState<number>(1);

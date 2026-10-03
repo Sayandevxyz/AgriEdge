@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import {
   CloudRain,
   Sun,
@@ -12,6 +14,11 @@ import {
 } from 'lucide-react';
 
 export const FarmerWeatherPage: React.FC = () => {
+  const { user } = useAuth();
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
   const [weatherData, setWeatherData] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
 

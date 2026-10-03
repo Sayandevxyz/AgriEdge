@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import {
   ResponsiveContainer,
   BarChart,
@@ -20,6 +22,11 @@ import {
 } from 'lucide-react';
 
 export const ScenarioSimulatorPage: React.FC = () => {
+  const { user } = useAuth();
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
   const [crop, setCrop] = useState<string>('Tomato');
   const [stage, setStage] = useState<string>('flowering');
   const [farmAcres, setFarmAcres] = useState<number>(2.0);

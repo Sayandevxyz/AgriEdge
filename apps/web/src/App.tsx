@@ -35,7 +35,7 @@ const RootRoute: React.FC = () => {
   }
 
   if (!user) {
-    return <LoginPage />;
+    return <Navigate to="/login" replace />;
   }
 
   if (user.role === 'FPO_ADMIN') {

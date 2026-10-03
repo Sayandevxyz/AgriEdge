@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { Farm } from '../../types';
@@ -17,9 +17,13 @@ import {
 } from 'lucide-react';
 
 export const FarmsListPage: React.FC = () => {
-  const { token } = useAuth();
+  const { user, token } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
 
   const [farms, setFarms] = useState<Farm[]>([]);
   const [loading, setLoading] = useState<boolean>(true);

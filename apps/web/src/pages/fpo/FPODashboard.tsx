@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import { DiseaseMap } from '../../components/DiseaseMap';
 import { DiseaseHotspot } from '../../types';
 import {
@@ -32,6 +34,11 @@ import {
 } from 'lucide-react';
 
 export const FPODashboard: React.FC = () => {
+  const { user } = useAuth();
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
   const [fpoData, setFpoData] = useState<any>(null);
   const [hotspots, setHotspots] = useState<DiseaseHotspot[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
