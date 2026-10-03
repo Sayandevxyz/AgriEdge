@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Mic, MicOff, Volume2, X, Sparkles, CheckCircle2, AlertCircle, RotateCcw, Send, CornerDownLeft } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
@@ -33,6 +33,21 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
   const recognitionRef = useRef<any>(null);
   const silenceTimerRef = useRef<any>(null);
 
+  // Stop recognition helper
+  const stopListening = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        // Ignore stop errors if already stopped
+      }
+    }
+  }, []);
+
   // Sync with app language
   useEffect(() => {
     setActiveLang(language);
@@ -40,11 +55,15 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
 
   // Load voices for realistic TTS
   useEffect(() => {
-    if ('speechSynthesis' in window) {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       const updateVoices = () => {
-        const loaded = window.speechSynthesis.getVoices();
-        if (loaded && loaded.length > 0) {
-          setVoices(loaded);
+        try {
+          const loaded = window.speechSynthesis.getVoices();
+          if (loaded && loaded.length > 0) {
+            setVoices(loaded);
+          }
+        } catch (e) {
+          console.warn('Error loading speech voices:', e);
         }
       };
 
@@ -53,12 +72,14 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
     }
   }, []);
 
-  // Cleanup on close
+  // Reset & cleanup when closed or unmounted
   useEffect(() => {
     if (!isOpen) {
       stopListening();
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel();
+        } catch (e) {}
       }
       setState('READY');
       setQueryInput('');
@@ -68,80 +89,156 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
       setErrorMessage('');
       setIsSpeaking(false);
     }
-  }, [isOpen]);
 
-  if (!isOpen) return null;
+    return () => {
+      stopListening();
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel();
+        } catch (e) {}
+      }
+    };
+  }, [isOpen, stopListening]);
 
-  const handleLangSwitch = (lang: LanguageCode) => {
+  const speakText = useCallback((text: string, langCode: string) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window) || !text) return;
+
+    try {
+      window.speechSynthesis.cancel();
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      const targetLocale = langCode === 'hi' ? 'hi-IN' : langCode === 'ta' ? 'ta-IN' : 'en-IN';
+      utterance.lang = targetLocale;
+      utterance.rate = 0.92;
+      utterance.pitch = 1.0;
+
+      if (voices.length > 0) {
+        const langMatches = voices.filter((v) =>
+          v.lang.toLowerCase().replace('_', '-').startsWith(langCode)
+        );
+
+        const naturalVoice =
+          langMatches.find(
+            (v) =>
+              v.name.includes('Natural') ||
+              v.name.includes('Google') ||
+              v.name.includes('Swara') ||
+              v.name.includes('Madhur') ||
+              v.name.includes('Valluvar') ||
+              v.name.includes('Pallavi')
+          ) || langMatches[0];
+
+        if (naturalVoice) {
+          utterance.voice = naturalVoice;
+        }
+      }
+
+      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onend = () => setIsSpeaking(false);
+      utterance.onerror = () => setIsSpeaking(false);
+
+      window.speechSynthesis.speak(utterance);
+    } catch (e) {
+      console.warn('Speech synthesis error:', e);
+      setIsSpeaking(false);
+    }
+  }, [voices]);
+
+  const handleLangSwitch = useCallback((lang: LanguageCode) => {
     setActiveLang(lang);
     setLanguage(lang);
     stopListening();
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch (e) {}
     }
     setIsSpeaking(false);
     setErrorMessage('');
-  };
+  }, [setLanguage, stopListening]);
 
-  const speakText = (text: string, langCode: string) => {
-    if (!('speechSynthesis' in window) || !text) return;
-
-    window.speechSynthesis.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    const targetLocale = langCode === 'hi' ? 'hi-IN' : langCode === 'ta' ? 'ta-IN' : 'en-IN';
-    utterance.lang = targetLocale;
-    utterance.rate = 0.92;
-    utterance.pitch = 1.0;
-
-    if (voices.length > 0) {
-      const langMatches = voices.filter((v) =>
-        v.lang.toLowerCase().replace('_', '-').startsWith(langCode)
+  const sendVoiceQuery = useCallback(async (queryText: string) => {
+    const textToSend = queryText?.trim();
+    if (!textToSend) {
+      setErrorMessage(
+        activeLang === 'hi'
+          ? 'कृपया प्रश्न बोलें या टाइप करें।'
+          : activeLang === 'ta'
+          ? 'தயவுசெய்து கேள்வியை பேசவும் அல்லது தட்டச்சு செய்யவும்.'
+          : 'Please speak or type a question.'
       );
+      return;
+    }
 
-      const naturalVoice =
-        langMatches.find(
-          (v) =>
-            v.name.includes('Natural') ||
-            v.name.includes('Google') ||
-            v.name.includes('Swara') ||
-            v.name.includes('Madhur') ||
-            v.name.includes('Valluvar') ||
-            v.name.includes('Pallavi')
-        ) || langMatches[0];
+    stopListening();
+    setState('PROCESSING');
+    setTranscript(textToSend);
+    setQueryInput(textToSend);
+    setErrorMessage('');
 
-      if (naturalVoice) {
-        utterance.voice = naturalVoice;
+    try {
+      const formData = new FormData();
+      formData.append('query_text', textToSend);
+      formData.append('language', activeLang);
+      formData.append('crop', 'Tomato');
+      formData.append('farm_acres', '2.0');
+
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
       }
+
+      const res = await fetch('/api/v1/voice/transcribe', {
+        method: 'POST',
+        headers,
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setIntent(data.nlu_analysis?.intent || 'GENERAL_AGRICULTURE_QUERY');
+        setSpokenResponse(data.spoken_response);
+        setState('RESPONDING');
+
+        // Play realistic speech in the target language
+        const responseLang = data.language || activeLang;
+        speakText(data.spoken_response, responseLang);
+
+        if (data.advisory && onAdvisoryReceived) {
+          onAdvisoryReceived(data.advisory);
+        }
+      } else {
+        setState('ERROR');
+        setErrorMessage(
+          activeLang === 'hi'
+            ? 'सलाह प्राप्त करने में त्रुटि। कृपया पुनः प्रयास करें।'
+            : activeLang === 'ta'
+            ? 'ஆலோசனை பெற முடியவில்லை. மீண்டும் முயற்சிக்கவும்.'
+            : 'Failed to process voice query. Please try again.'
+        );
+      }
+    } catch (err) {
+      setState('ERROR');
+      setErrorMessage(
+        activeLang === 'hi'
+          ? 'कनेक्शन त्रुटि। कृपया नेटवर्क जांचें।'
+          : activeLang === 'ta'
+          ? 'இணைப்பு பிழை. இணைய இணைப்பை சரிபார்க்கவும்.'
+          : 'Connection error. Please check your network connection.'
+      );
     }
+  }, [activeLang, token, stopListening, speakText, onAdvisoryReceived]);
 
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-
-    window.speechSynthesis.speak(utterance);
-  };
-
-  const stopListening = () => {
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch (e) {}
-    }
-  };
-
-  const startListening = () => {
+  const startListening = useCallback(() => {
     stopListening();
     setState('LISTENING');
     setErrorMessage('');
     setIsSpeaking(false);
 
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch (e) {}
     }
 
     const SpeechRecognition =
@@ -213,9 +310,9 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
     };
 
     recognition.onend = () => {
-      if (state === 'LISTENING' && capturedText.trim().length > 0) {
+      if (capturedText.trim().length > 0) {
         sendVoiceQuery(capturedText);
-      } else if (state === 'LISTENING') {
+      } else {
         setState('READY');
       }
     };
@@ -226,88 +323,16 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
       console.warn('Recognition start error:', e);
       setState('READY');
     }
-  };
+  }, [activeLang, stopListening, sendVoiceQuery]);
 
-  const handleManualStopOrSend = () => {
+  const handleManualStopOrSend = useCallback(() => {
     stopListening();
     if (queryInput && queryInput.trim().length > 0) {
       sendVoiceQuery(queryInput);
     } else {
       setState('READY');
     }
-  };
-
-  const sendVoiceQuery = async (queryText: string) => {
-    const textToSend = queryText?.trim();
-    if (!textToSend) {
-      setErrorMessage(
-        activeLang === 'hi'
-          ? 'कृपया प्रश्न बोलें या टाइप करें।'
-          : activeLang === 'ta'
-          ? 'தயவுசெய்து கேள்வியை பேசவும் அல்லது தட்டச்சு செய்யவும்.'
-          : 'Please speak or type a question.'
-      );
-      return;
-    }
-
-    stopListening();
-    setState('PROCESSING');
-    setTranscript(textToSend);
-    setQueryInput(textToSend);
-    setErrorMessage('');
-
-    try {
-      const formData = new FormData();
-      formData.append('query_text', textToSend);
-      formData.append('language', activeLang);
-      formData.append('crop', 'Tomato');
-      formData.append('farm_acres', '2.0');
-
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const res = await fetch('/api/v1/voice/transcribe', {
-        method: 'POST',
-        headers,
-        body: formData
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setIntent(data.nlu_analysis?.intent || 'GENERAL_AGRICULTURE_QUERY');
-        setSpokenResponse(data.spoken_response);
-        setState('RESPONDING');
-
-        // Play realistic speech in the target language
-        const responseLang = data.language || activeLang;
-        speakText(data.spoken_response, responseLang);
-
-        if (data.advisory && onAdvisoryReceived) {
-          onAdvisoryReceived(data.advisory);
-        }
-      } else {
-        setState('ERROR');
-        setErrorMessage(
-          activeLang === 'hi'
-            ? 'सलाह प्राप्त करने में त्रुटि। कृपया पुनः प्रयास करें।'
-            : activeLang === 'ta'
-            ? 'ஆலோசனை பெற முடியவில்லை. மீண்டும் முயற்சிக்கவும்.'
-            : 'Failed to process voice query. Please try again.'
-        );
-      }
-    } catch (err) {
-      setState('ERROR');
-      setErrorMessage(
-        activeLang === 'hi'
-          ? 'कनेक्शन त्रुटि। कृपया नेटवर्क जांचें।'
-          : activeLang === 'ta'
-          ? 'இணைப்பு பிழை. இணைய இணைப்பை சரிபார்க்கவும்.'
-          : 'Connection error. Please check your network connection.'
-      );
-    }
-  };
+  }, [queryInput, stopListening, sendVoiceQuery]);
 
   const quickQuestions = {
     en: [
@@ -330,6 +355,9 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
     ]
   };
 
+  // Only return null right before rendering JSX, after all hooks and functions are declared
+  if (!isOpen) return null;
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl relative border border-slate-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -348,153 +376,201 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
             <Sparkles className="w-3.5 h-3.5 text-agri-600" />
             Multilingual Voice & AI Assistant
           </div>
-          <h2 className="text-xl font-bold text-slate-900">Ask AgriEdge</h2>
-          
-          {/* Language Selector Pills */}
-          <div className="flex items-center justify-center gap-1.5 mt-2">
+          <h3 className="text-xl font-bold text-slate-900">
+            {activeLang === 'hi'
+              ? 'आवाज से खेती संबंधी प्रश्न पूछें'
+              : activeLang === 'ta'
+              ? 'குரல் மூலம் விவசாய ஆலோசனைகள் கேளுங்கள்'
+              : 'Ask Any Crop Advice by Voice'}
+          </h3>
+        </div>
+
+        {/* Language Selection Pills */}
+        <div className="flex items-center justify-center gap-2 mb-5">
+          <button
+            type="button"
+            onClick={() => handleLangSwitch('en')}
+            className={`px-3 py-1 rounded-full text-xs font-semibold border transition ${
+              activeLang === 'en'
+                ? 'bg-agri-600 text-white border-agri-600 shadow-sm'
+                : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+            }`}
+          >
+            English
+          </button>
+          <button
+            type="button"
+            onClick={() => handleLangSwitch('hi')}
+            className={`px-3 py-1 rounded-full text-xs font-semibold border transition ${
+              activeLang === 'hi'
+                ? 'bg-agri-600 text-white border-agri-600 shadow-sm'
+                : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+            }`}
+          >
+            हिंदी (Hindi)
+          </button>
+          <button
+            type="button"
+            onClick={() => handleLangSwitch('ta')}
+            className={`px-3 py-1 rounded-full text-xs font-semibold border transition ${
+              activeLang === 'ta'
+                ? 'bg-agri-600 text-white border-agri-600 shadow-sm'
+                : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+            }`}
+          >
+            தமிழ் (Tamil)
+          </button>
+        </div>
+
+        {/* Central Voice Mic Circle */}
+        <div className="flex flex-col items-center justify-center my-4">
+          <div className="relative">
+            {state === 'LISTENING' && (
+              <>
+                <div className="absolute inset-0 rounded-full bg-agri-400 animate-ping opacity-35"></div>
+                <div className="absolute -inset-3 rounded-full bg-agri-200 animate-pulse opacity-50"></div>
+              </>
+            )}
+            {state === 'PROCESSING' && (
+              <div className="absolute -inset-2 rounded-full border-4 border-amber-400 border-t-transparent animate-spin"></div>
+            )}
             <button
-              onClick={() => handleLangSwitch('en')}
-              className={`px-3 py-1 rounded-full text-xs font-bold transition ${
-                activeLang === 'en'
-                  ? 'bg-agri-700 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              onClick={() => {
+                if (state === 'LISTENING') {
+                  handleManualStopOrSend();
+                } else if (state === 'RESPONDING') {
+                  speakText(spokenResponse, activeLang);
+                } else {
+                  startListening();
+                }
+              }}
+              className={`w-20 h-20 rounded-full flex items-center justify-center relative z-10 shadow-lg transition-transform active:scale-95 ${
+                state === 'LISTENING'
+                  ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/30'
+                  : state === 'PROCESSING'
+                  ? 'bg-amber-500 text-white shadow-amber-500/30'
+                  : state === 'RESPONDING'
+                  ? 'bg-agri-600 text-white shadow-agri-600/30'
+                  : 'bg-slate-900 hover:bg-slate-800 text-white shadow-slate-900/20'
               }`}
             >
-              English
+              {state === 'LISTENING' ? (
+                <MicOff className="w-8 h-8" />
+              ) : state === 'PROCESSING' ? (
+                <RotateCcw className="w-8 h-8 animate-spin" />
+              ) : state === 'RESPONDING' ? (
+                <Volume2 className={`w-8 h-8 ${isSpeaking ? 'animate-bounce' : ''}`} />
+              ) : (
+                <Mic className="w-8 h-8" />
+              )}
             </button>
-            <button
-              onClick={() => handleLangSwitch('hi')}
-              className={`px-3 py-1 rounded-full text-xs font-bold transition ${
+          </div>
+
+          <div className="mt-3 text-center">
+            <span
+              className={`text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
+                state === 'LISTENING'
+                  ? 'bg-red-100 text-red-700'
+                  : state === 'PROCESSING'
+                  ? 'bg-amber-100 text-amber-800'
+                  : state === 'RESPONDING'
+                  ? 'bg-agri-100 text-agri-800'
+                  : 'bg-slate-100 text-slate-700'
+              }`}
+            >
+              {state === 'READY' && (activeLang === 'hi' ? 'बोलने के लिए माइक दबाएं' : activeLang === 'ta' ? 'பேச மைக் அழுத்தவும்' : 'Tap Mic to Speak')}
+              {state === 'LISTENING' && (activeLang === 'hi' ? 'सुन रहा है... (रुकने पर स्वतः भेजेगा)' : activeLang === 'ta' ? 'கேட்கிறது... (நிறுத்தினால் அனுப்பும்)' : 'Listening... (auto-submits on pause)')}
+              {state === 'PROCESSING' && (activeLang === 'hi' ? 'AI विश्लेषण कर रहा है...' : activeLang === 'ta' ? 'AI பரிசீலிக்கிறது...' : 'AI Analyzing Query...')}
+              {state === 'RESPONDING' && (activeLang === 'hi' ? 'सलाह तैयार है' : activeLang === 'ta' ? 'பதில் தயாராக உள்ளது' : 'Advice Ready')}
+              {state === 'ERROR' && (activeLang === 'hi' ? 'पुनः प्रयास करें' : activeLang === 'ta' ? 'மீண்டும் முயற்சிக்கவும்' : 'Please Retry')}
+            </span>
+          </div>
+        </div>
+
+        {/* Live Transcript / Text Box with Edit & Send Button */}
+        <div className="mt-3">
+          <label className="block text-xs font-medium text-slate-600 mb-1">
+            {activeLang === 'hi' ? 'आपका प्रश्न (बोलें या यहाँ लिखें):' : activeLang === 'ta' ? 'உங்கள் கேள்வி (பேசவும் அல்லது தட்டச்சு செய்யவும்):' : 'Your Query (speak or type):'}
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={queryInput}
+              onChange={(e) => setQueryInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  sendVoiceQuery(queryInput);
+                }
+              }}
+              placeholder={
                 activeLang === 'hi'
-                  ? 'bg-emerald-700 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              हिंदी (Hindi)
-            </button>
+                  ? 'जैसे: क्या आज टमाटर में पानी देना चाहिए?'
+                  : activeLang === 'ta'
+                  ? 'உதாரணம்: இன்று தக்காளிக்கு தண்ணீர் பாய்ச்சலாமா?'
+                  : 'e.g. Should I irrigate my tomato crop today?'
+              }
+              className="flex-1 text-sm px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-agri-500 focus:border-agri-500"
+            />
             <button
-              onClick={() => handleLangSwitch('ta')}
-              className={`px-3 py-1 rounded-full text-xs font-bold transition ${
-                activeLang === 'ta'
-                  ? 'bg-teal-700 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
+              onClick={() => sendVoiceQuery(queryInput)}
+              disabled={state === 'PROCESSING' || !queryInput.trim()}
+              className="bg-agri-600 hover:bg-agri-700 disabled:opacity-50 text-white px-3 py-2 rounded-xl text-sm font-semibold flex items-center gap-1 transition"
             >
-              தமிழ் (Tamil)
+              <Send className="w-3.5 h-3.5" />
+              <span>{activeLang === 'hi' ? 'पूछें' : activeLang === 'ta' ? 'கேள்' : 'Ask'}</span>
             </button>
           </div>
         </div>
 
-        {/* Central Animated Mic Button */}
-        <div className="flex flex-col items-center justify-center py-3">
-          <button
-            onClick={state === 'LISTENING' ? handleManualStopOrSend : startListening}
-            disabled={state === 'PROCESSING'}
-            className={`w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300 shadow-xl ${
-              state === 'LISTENING'
-                ? 'bg-rose-500 text-white animate-pulse scale-110 shadow-rose-500/40 ring-8 ring-rose-100'
-                : state === 'PROCESSING'
-                ? 'bg-amber-500 text-white animate-spin shadow-amber-500/30'
-                : 'bg-gradient-to-tr from-agri-700 to-agri-500 text-white hover:scale-105 shadow-agri-700/30 ring-8 ring-agri-50'
-            }`}
-          >
-            {state === 'LISTENING' ? (
-              <MicOff className="w-8 h-8" />
-            ) : (
-              <Mic className="w-8 h-8" />
-            )}
-          </button>
+        {/* Error Notification */}
+        {errorMessage && (
+          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
 
-          <p className="mt-3 font-bold text-xs tracking-wide text-slate-700">
-            {state === 'READY' && (activeLang === 'hi' ? 'बोलने के लिए माइक दबाएं' : activeLang === 'ta' ? 'பேச மைக்கை அழுத்தவும்' : 'Tap Mic to Speak')}
-            {state === 'LISTENING' && (activeLang === 'hi' ? 'सुन रहे हैं... (रोकने के लिए दोबारा दबाएं)' : activeLang === 'ta' ? 'கவனிக்கிறது... (நிறுத்த மீண்டும் அழுத்தவும்)' : 'Listening... (Tap to stop & submit)')}
-            {state === 'PROCESSING' && (activeLang === 'hi' ? 'कृषि सलाह तैयार हो रही है...' : activeLang === 'ta' ? 'ஆலோசனை தயாராகிறது...' : 'Analyzing crop intelligence...')}
-            {state === 'RESPONDING' && (activeLang === 'hi' ? 'एग्रीएज बोल रहा है' : activeLang === 'ta' ? 'அக்ரிஎட்ஜ் பேசுகிறது' : 'AgriEdge Speaking')}
-            {state === 'ERROR' && (activeLang === 'hi' ? 'पुनः प्रयास करें' : activeLang === 'ta' ? 'மீண்டும் முயற்சிக்கவும்' : 'Try again')}
-          </p>
-        </div>
-
-        {/* Live Editable Text Input Box */}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            sendVoiceQuery(queryInput);
-          }}
-          className="relative mb-3"
-        >
-          <input
-            type="text"
-            value={queryInput}
-            onChange={(e) => setQueryInput(e.target.value)}
-            placeholder={
-              activeLang === 'hi'
-                ? 'माइक से बोलें या प्रश्न यहाँ टाइप करें...'
-                : activeLang === 'ta'
-                ? 'மைக்கில் பேசவும் அல்லது கேள்வியை இங்கே தட்டச்சு செய்யவும்...'
-                : 'Speak with mic or type your crop question here...'
-            }
-            className="w-full pl-3 pr-10 py-2.5 rounded-xl border border-slate-300 text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-agri-600 bg-slate-50/50"
-          />
-          <button
-            type="submit"
-            disabled={!queryInput.trim() || state === 'PROCESSING'}
-            className="absolute right-1.5 top-1.5 p-1.5 bg-agri-700 hover:bg-agri-800 disabled:opacity-40 text-white rounded-lg transition"
-            title="Submit Query"
-          >
-            <Send className="w-3.5 h-3.5" />
-          </button>
-        </form>
-
-        {/* Spoken Advice Display & Replay Button */}
+        {/* Response Box */}
         {spokenResponse && (
-          <div className="bg-emerald-50 rounded-2xl p-3.5 border border-emerald-200 mb-3 animate-in fade-in">
-            <div className="flex items-center justify-between text-emerald-800 font-bold text-xs mb-1">
-              <span className="flex items-center gap-1.5">
-                <Volume2 className={`w-4 h-4 ${isSpeaking ? 'text-emerald-600 animate-bounce' : 'text-emerald-600'}`} />
-                {activeLang === 'hi' ? 'एग्रीएज आवाज सलाह:' : activeLang === 'ta' ? 'அக்ரிஎட்ஜ் குரல் ஆலோசனை:' : 'AgriEdge Spoken Advisory:'}
-              </span>
-
+          <div className="mt-4 p-4 bg-agri-50/80 border border-agri-200 rounded-2xl animate-in fade-in">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-agri-900">
+                <CheckCircle2 className="w-4 h-4 text-agri-600" />
+                <span>{activeLang === 'hi' ? 'AgriEdge AI सलाह:' : activeLang === 'ta' ? 'AgriEdge AI ஆலோசனை:' : 'AgriEdge AI Spoken Advice:'}</span>
+              </div>
               <button
                 type="button"
                 onClick={() => speakText(spokenResponse, activeLang)}
-                className="flex items-center gap-1 text-[11px] bg-white px-2 py-0.5 rounded-lg border border-emerald-300 text-emerald-800 hover:bg-emerald-100 transition font-semibold shadow-2xs"
-                title="Replay Voice Audio"
+                className="text-xs text-agri-700 hover:text-agri-900 flex items-center gap-1 font-medium bg-white px-2 py-1 rounded-lg border border-agri-200 hover:shadow-sm"
               >
-                <RotateCcw className="w-3 h-3" />
-                {activeLang === 'hi' ? 'दोबारा सुनें' : activeLang === 'ta' ? 'மீண்டும் கேள்' : 'Replay'}
+                <Volume2 className="w-3.5 h-3.5" />
+                <span>{activeLang === 'hi' ? 'दोबारा सुनें' : activeLang === 'ta' ? 'மீண்டும் கேள்' : 'Replay'}</span>
               </button>
             </div>
-
-            <p className="text-xs text-emerald-950 leading-relaxed font-medium">
+            <p className="text-slate-800 text-sm leading-relaxed font-medium">
               {spokenResponse}
             </p>
           </div>
         )}
 
-        {errorMessage && (
-          <div className="bg-rose-50 text-rose-800 p-2.5 rounded-xl border border-rose-200 text-xs flex items-center gap-2 mb-3">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span>{errorMessage}</span>
-          </div>
-        )}
-
-        {/* Quick Question Chips for Selected Language */}
-        <div className="pt-2 border-t border-slate-100">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider text-center mb-1.5">
-            {activeLang === 'hi' ? '⚡ त्वरित प्रश्न (टैप करें)' : activeLang === 'ta' ? '⚡ விரைவு வினாக்கள்' : '⚡ Quick Questions'}
+        {/* 1-Tap Quick Question Chips */}
+        <div className="mt-4 pt-3 border-t border-slate-100">
+          <p className="text-xs text-slate-500 font-medium mb-2">
+            {activeLang === 'hi' ? 'या इन प्रश्नों पर टैप करें:' : activeLang === 'ta' ? 'அல்லது விரைவு கேள்விகளை தேர்வு செய்யவும்:' : 'Or tap a quick question:'}
           </p>
-          <div className="flex flex-wrap gap-1.5 justify-center">
-            {(quickQuestions[activeLang] || quickQuestions.en).map((chip, idx) => (
+          <div className="flex flex-wrap gap-1.5">
+            {quickQuestions[activeLang]?.map((item, idx) => (
               <button
                 key={idx}
                 type="button"
                 onClick={() => {
-                  setQueryInput(chip.query);
-                  sendVoiceQuery(chip.query);
+                  setQueryInput(item.query);
+                  sendVoiceQuery(item.query);
                 }}
-                className="text-[11px] bg-slate-100 hover:bg-agri-50 hover:text-agri-800 text-slate-700 px-2.5 py-1 rounded-full border border-slate-200 transition font-medium"
+                className="text-xs bg-slate-50 hover:bg-agri-50 hover:text-agri-800 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200 hover:border-agri-300 transition text-left"
               >
-                {chip.label}
+                {item.label}
               </button>
             ))}
           </div>

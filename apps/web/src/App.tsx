@@ -107,10 +107,12 @@ export const App: React.FC = () => {
                 <BottomNav onOpenVoice={() => setIsVoiceOpen(true)} />
 
                 {/* Global Voice Assistant Modal */}
-                <VoiceQueryModal
-                  isOpen={isVoiceOpen}
-                  onClose={() => setIsVoiceOpen(false)}
-                />
+                {isVoiceOpen && (
+                  <VoiceQueryModal
+                    isOpen={isVoiceOpen}
+                    onClose={() => setIsVoiceOpen(false)}
+                  />
+                )}
               </div>
             </BrowserRouter>
           </OfflineSyncProvider>
