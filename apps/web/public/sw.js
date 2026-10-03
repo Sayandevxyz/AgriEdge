@@ -1,4 +1,4 @@
-const CACHE_NAME = 'agriedge-v2';
+const CACHE_NAME = 'agriedge-v3';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
