@@ -1,0 +1,28 @@
+{
+  "name": "agriedge-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AgriEdge: Farmer-Owned Intelligence for Water, Energy & Crop Productivity",
+  "scripts": {
+    "dev": "npm --prefix apps/web run dev",
+    "build": "npm --prefix apps/web run build",
+    "test:backend": ".\\.venv\\Scripts\\pytest tests -v",
+    "start:backend": ".\\.venv\\Scripts\\uvicorn apps.api.main:app --host 0.0.0.0 --port 8000 --reload"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "keywords": [
+    "agriculture",
+    "agritech",
+    "fao-56",
+    "irrigation",
+    "energy-efficiency",
+    "crop-health",
+    "fpo",
+    "ai"
+  ],
+  "author": "AgriEdge Architecture Team",
+  "license": "Apache-2.0"
+}

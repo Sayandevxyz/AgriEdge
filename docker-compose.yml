@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: agriedge-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agriedge
+      POSTGRES_USER: agriedge_user
+      POSTGRES_PASSWORD: agriedge_secure_password_2026
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agriedge_user -d agriedge"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: agriedge-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: agriedge-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_MODE: production
+      DATABASE_URL: postgresql://agriedge_user:agriedge_secure_password_2026@postgres:5432/agriedge
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: agriedge_jwt_super_secret_key_change_in_production_987654321
+      JWT_REFRESH_SECRET: agriedge_jwt_refresh_super_secret_key_change_in_production_123456789
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000,http://localhost
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    container_name: agriedge-web
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  postgres_data:
+  redis_data:

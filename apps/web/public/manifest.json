@@ -1,0 +1,17 @@
+{
+  "short_name": "AgriEdge",
+  "name": "AgriEdge: Farmer-Owned Intelligence",
+  "description": "Save Water. Save Energy. Grow Smarter.",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192 512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0B1410",
+  "theme_color": "#14532D",
+  "display": "standalone",
+  "orientation": "portrait"
+}
