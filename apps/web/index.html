@@ -15,6 +15,24 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="manifest" href="/manifest.json" />
     <script>
+      // Immediately unregister any legacy service workers & clear caches
+      try {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            for (var i = 0; i < regs.length; i++) {
+              regs[i].unregister();
+            }
+          });
+        }
+        if ('caches' in window) {
+          caches.keys().then(function(names) {
+            for (var i = 0; i < names.length; i++) {
+              caches.delete(names[i]);
+            }
+          });
+        }
+      } catch (err) {}
+
       // Automatic recovery if an old chunk is requested during/after deployment rollouts
       window.addEventListener('error', function (e) {
         var target = e.target;
@@ -22,20 +40,8 @@
           var key = 'agriedge_reload_ts';
           var last = sessionStorage.getItem(key);
           var now = Date.now();
-          if (!last || now - parseInt(last, 10) > 3000) {
+          if (!last || now - parseInt(last, 10) > 4000) {
             sessionStorage.setItem(key, String(now));
-            if ('serviceWorker' in navigator) {
-              navigator.serviceWorker.getRegistrations().then(function(regs) {
-                for (var i = 0; i < regs.length; i++) {
-                  regs[i].unregister();
-                }
-              });
-            }
-            if ('caches' in window) {
-              caches.keys().then(function(names) {
-                names.forEach(function(n) { caches.delete(n); });
-              });
-            }
             window.location.reload();
           }
         }

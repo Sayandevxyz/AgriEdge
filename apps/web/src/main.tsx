@@ -33,14 +33,12 @@ window.addEventListener('error', (e) => {
   }
 });
 
-// PWA Service Worker Registration & Live Updates
-if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').then((reg) => {
-      reg.update();
-    }).catch((err) => {
-      console.log('SW registration failed: ', err);
-    });
+// Proactively unregister any legacy service workers to ensure clean network fetching
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    for (const reg of registrations) {
+      reg.unregister();
+    }
   });
 }
 
