@@ -135,164 +135,7 @@ export const CropAnalysisFlow: React.FC = () => {
     }
   };
 
-  // Synthetic sample leaf generator for instantaneous demo/judge testing across diverse crops
-  const loadSampleLeaf = (cropType: 'tomato' | 'chilli' | 'rice' | 'cotton' | 'maize', condition: 'blight' | 'healthy' = 'blight') => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 400;
-    canvas.height = 400;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.clearRect(0, 0, 400, 400);
 
-      if (cropType === 'rice') {
-        // Long slender linear grass blade (high aspect ratio)
-        ctx.fillStyle = '#4CAF50';
-        ctx.beginPath();
-        ctx.ellipse(200, 200, 35, 180, 0, 0, 2 * Math.PI);
-        ctx.fill();
-
-        // Parallel venation
-        ctx.strokeStyle = '#81C784';
-        ctx.lineWidth = 1.5;
-        [-15, -5, 5, 15].forEach(offset => {
-          ctx.beginPath();
-          ctx.moveTo(200 + offset, 380);
-          ctx.lineTo(200 + offset, 20);
-          ctx.stroke();
-        });
-
-        if (condition === 'blight') {
-          // Brown spot (oval cylindrical spots)
-          ctx.fillStyle = '#5D4037';
-          ctx.beginPath();
-          ctx.ellipse(200, 160, 12, 28, 0, 0, 2 * Math.PI);
-          ctx.ellipse(205, 260, 10, 22, 0, 0, 2 * Math.PI);
-          ctx.fill();
-        }
-      } else if (cropType === 'chilli') {
-        // Simple ovate-elliptic leaf with smooth margins
-        ctx.fillStyle = '#1B5E20'; // Darker emerald green
-        ctx.beginPath();
-        ctx.ellipse(200, 200, 110, 160, 0, 0, 2 * Math.PI);
-        ctx.fill();
-
-        // Main vein
-        ctx.strokeStyle = '#66BB6A';
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.moveTo(200, 360);
-        ctx.lineTo(200, 40);
-        ctx.stroke();
-
-        if (condition === 'blight') {
-          // Anthracnose circular sunken spots
-          ctx.fillStyle = '#3E2723';
-          ctx.beginPath();
-          ctx.arc(170, 180, 25, 0, 2 * Math.PI);
-          ctx.arc(220, 240, 20, 0, 2 * Math.PI);
-          ctx.fill();
-        }
-      } else if (cropType === 'cotton') {
-        // Palmate 3-lobed leaf
-        ctx.fillStyle = '#2E7D32';
-        ctx.beginPath();
-        ctx.moveTo(200, 360);
-        ctx.lineTo(100, 220);
-        ctx.lineTo(130, 140);
-        ctx.lineTo(200, 60);
-        ctx.lineTo(270, 140);
-        ctx.lineTo(300, 220);
-        ctx.closePath();
-        ctx.fill();
-
-        if (condition === 'blight') {
-          // Angular leaf spot
-          ctx.fillStyle = '#4E342E';
-          ctx.fillRect(170, 160, 30, 25);
-          ctx.fillRect(220, 200, 25, 20);
-        }
-      } else if (cropType === 'maize') {
-        // Maize Field Canopy: Sky horizon, tall corn stalks & arching linear ribbon leaves
-        ctx.fillStyle = '#E0F2FE'; // Sky horizon
-        ctx.fillRect(0, 0, 400, 160);
-        ctx.fillStyle = '#2E7D32'; // Field floor
-        ctx.fillRect(0, 160, 400, 240);
-
-        // Stalks
-        [100, 200, 300].forEach((x, idx) => {
-          ctx.strokeStyle = '#1B5E20';
-          ctx.lineWidth = idx === 1 ? 14 : 10;
-          ctx.beginPath();
-          ctx.moveTo(x, 400);
-          ctx.lineTo(x, idx === 1 ? 60 : 100);
-          ctx.stroke();
-
-          // Arching ribbon leaves
-          ctx.strokeStyle = '#388E3C';
-          ctx.lineWidth = 7;
-          ctx.beginPath();
-          ctx.arc(x - 50, 180 + idx * 20, 120, Math.PI, 1.8 * Math.PI, false);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.arc(x + 50, 210 + idx * 20, 130, 1.2 * Math.PI, 2 * Math.PI, false);
-          ctx.stroke();
-        });
-
-        // Pale central midrib
-        ctx.strokeStyle = '#C8E6C9';
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.moveTo(200, 390);
-        ctx.lineTo(200, 70);
-        ctx.stroke();
-
-        if (condition === 'blight') {
-          // Cigar-shaped necrotic lesions (Northern Corn Leaf Blight)
-          ctx.fillStyle = '#5D4037';
-          ctx.beginPath();
-          ctx.ellipse(140, 170, 26, 9, -0.2, 0, 2 * Math.PI);
-          ctx.ellipse(260, 230, 28, 10, 0.25, 0, 2 * Math.PI);
-          ctx.ellipse(120, 270, 24, 8, -0.15, 0, 2 * Math.PI);
-          ctx.fill();
-        }
-      } else {
-        // Tomato: Pinnate compound serrated leaf
-        ctx.fillStyle = '#2E7D32';
-        ctx.beginPath();
-        ctx.ellipse(200, 200, 140, 180, Math.PI / 10, 0, 2 * Math.PI);
-        ctx.fill();
-
-        // Leaf vein structure
-        ctx.strokeStyle = '#81C784';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(200, 380);
-        ctx.lineTo(200, 40);
-        ctx.stroke();
-
-        if (condition === 'blight') {
-          ctx.fillStyle = '#5D4037';
-          ctx.beginPath();
-          ctx.arc(160, 180, 40, 0, 2 * Math.PI);
-          ctx.arc(230, 240, 35, 0, 2 * Math.PI);
-          ctx.fill();
-
-          ctx.strokeStyle = '#FBC02D';
-          ctx.lineWidth = 4;
-          ctx.stroke();
-        }
-      }
-
-      canvas.toBlob((blob) => {
-        if (blob) {
-          const file = new File([blob], `${cropType}_leaf_${condition}.jpg`, { type: 'image/jpeg' });
-          setSelectedFile(file);
-          setPreviewUrl(URL.createObjectURL(file));
-          triggerCropDetection(file);
-        }
-      }, 'image/jpeg');
-    }
-  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -496,21 +339,13 @@ export const CropAnalysisFlow: React.FC = () => {
                     </span>
                   </div>
 
-                  {/* 1-Click Instant Analysis Call to Action */}
-                  <div className="pt-2 flex flex-col sm:flex-row gap-2">
-                    <button
-                      onClick={startAnalysis}
-                      className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-bold px-5 py-3 rounded-2xl shadow-md transition"
-                    >
-                      <Sparkles className="w-4 h-4" />
-                      ⚡ 1-Click Multi-Agent Analysis (Skip Form)
-                    </button>
+                  <div className="pt-2 flex justify-end">
                     <button
                       onClick={() => setStep(2)}
-                      className="flex items-center justify-center gap-1.5 text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 px-4 py-3 rounded-2xl border border-slate-200 shadow-2xs transition"
+                      className="flex items-center gap-2 bg-agri-700 hover:bg-agri-800 text-white font-bold px-6 py-3 rounded-2xl shadow transition"
                     >
-                      Review Field Details
-                      <ArrowRight className="w-3.5 h-3.5" />
+                      Next: Crop Context
+                      <ArrowRight className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -518,65 +353,23 @@ export const CropAnalysisFlow: React.FC = () => {
             </div>
           )}
 
-          {/* Quick Demo Sample Selector */}
-          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-center">
-            <p className="text-xs font-semibold text-slate-600 mb-2">
-              ⚡ Test AI Auto-Detection on Sample Leaves:
-            </p>
-            <div className="flex flex-wrap gap-2 justify-center">
+          {!detectedCropData && (
+            <div className="flex justify-end pt-2">
               <button
-                type="button"
-                onClick={() => loadSampleLeaf('tomato', 'blight')}
-                className="text-xs font-bold bg-white hover:bg-amber-50 text-amber-900 px-3 py-1.5 rounded-xl border border-amber-300 shadow-2xs transition"
+                onClick={() => {
+                  if (!selectedFile) {
+                    setErrorMsg('Please select or capture a crop leaf image to continue.');
+                    return;
+                  }
+                  setStep(2);
+                }}
+                className="flex items-center gap-2 bg-agri-700 hover:bg-agri-800 text-white font-bold px-6 py-3 rounded-2xl shadow transition"
               >
-                🍂 Tomato Leaf (Blight)
-              </button>
-              <button
-                type="button"
-                onClick={() => loadSampleLeaf('chilli', 'blight')}
-                className="text-xs font-bold bg-white hover:bg-red-50 text-red-900 px-3 py-1.5 rounded-xl border border-red-300 shadow-2xs transition"
-              >
-                🌶️ Chilli Leaf (Anthracnose)
-              </button>
-              <button
-                type="button"
-                onClick={() => loadSampleLeaf('rice', 'blight')}
-                className="text-xs font-bold bg-white hover:bg-emerald-50 text-emerald-900 px-3 py-1.5 rounded-xl border border-emerald-300 shadow-2xs transition"
-              >
-                🌾 Rice / Paddy Leaf (Brown Spot)
-              </button>
-              <button
-                type="button"
-                onClick={() => loadSampleLeaf('cotton', 'blight')}
-                className="text-xs font-bold bg-white hover:bg-blue-50 text-blue-900 px-3 py-1.5 rounded-xl border border-blue-300 shadow-2xs transition"
-              >
-                🌱 Cotton Leaf (Bacterial Blight)
-              </button>
-              <button
-                type="button"
-                onClick={() => loadSampleLeaf('maize', 'blight')}
-                className="text-xs font-bold bg-white hover:bg-yellow-50 text-yellow-900 px-3 py-1.5 rounded-xl border border-yellow-300 shadow-2xs transition"
-              >
-                🌽 Maize Field (Northern Blight)
+                Next: Crop Context
+                <ArrowRight className="w-4 h-4" />
               </button>
             </div>
-          </div>
-
-          <div className="flex justify-end pt-2">
-            <button
-              onClick={() => {
-                if (!selectedFile) {
-                  setErrorMsg('Please select or load a sample leaf image to continue.');
-                  return;
-                }
-                setStep(2);
-              }}
-              className="flex items-center gap-2 bg-agri-700 hover:bg-agri-800 text-white font-bold px-6 py-3 rounded-2xl shadow transition"
-            >
-              Next: Crop Context
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
+          )}
         </div>
       )}
 
