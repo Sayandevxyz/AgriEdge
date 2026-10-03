@@ -9,6 +9,7 @@ import {
   Upload,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   RefreshCw,
   Sparkles,
   ArrowRight,
@@ -50,14 +51,16 @@ export const CropAnalysisFlow: React.FC = () => {
   // AI Crop Auto-Analyzer States
   const [isDetectingCrop, setIsDetectingCrop] = useState<boolean>(false);
   const [detectedCropData, setDetectedCropData] = useState<{
-    crop: string;
-    crop_key: string;
+    is_crop?: boolean;
+    crop?: string | null;
+    crop_key?: string | null;
     confidence: number;
-    scientific_name?: string;
-    family?: string;
-    variety_suggestion?: string;
-    default_stage?: string;
-    features_detected?: string;
+    scientific_name?: string | null;
+    family?: string | null;
+    variety_suggestion?: string | null;
+    default_stage?: string | null;
+    features_detected?: string | null;
+    error_message?: string | null;
     alternatives?: Array<{ crop: string; confidence: number }>;
   } | null>(null);
 
@@ -198,18 +201,45 @@ export const CropAnalysisFlow: React.FC = () => {
         const data = await res.json();
         const det = data.detection;
         if (det) {
-          setDetectedCropData(det);
-          setCrop(det.crop);
-          if (det.variety_suggestion) setVariety(det.variety_suggestion);
-          if (det.default_stage) setStage(det.default_stage);
+          if (det.is_crop === false || data.success === false || data.is_crop === false) {
+            setDetectedCropData({
+              is_crop: false,
+              crop: null,
+              confidence: 0,
+              features_detected: det.features_detected || 'Non-agricultural object or screen detected.',
+              error_message: det.error_message || 'No agricultural plant or leaf detected in this photo.'
+            });
+            setCrop('');
+          } else {
+            setDetectedCropData({
+              ...det,
+              is_crop: true
+            });
+            setCrop(det.crop);
+            if (det.variety_suggestion) setVariety(det.variety_suggestion);
+            if (det.default_stage) setStage(det.default_stage);
+          }
         }
       } else {
-        // Fallback local identification from filename
+        const errJson = await res.json().catch(() => ({}));
+        if (errJson.detail?.code === 'NOT_A_CROP_IMAGE') {
+          setDetectedCropData({
+            is_crop: false,
+            crop: null,
+            confidence: 0,
+            features_detected: errJson.detail.features_detected || 'Non-agricultural object or screen detected.',
+            error_message: errJson.detail.message || 'No agricultural crop leaf detected.'
+          });
+          setCrop('');
+          return;
+        }
+
+        // Fallback local identification from filename ONLY if filename explicitly names a crop
         const fn = file.name.toLowerCase();
-        let fallbackCrop = 'Tomato';
-        let fallbackVariety = 'Arka Rakshak (Hybrid)';
-        let fallbackFamily = 'Solanaceae';
-        let fallbackFeatures = 'Serrated pinnate leaflets with reticulate venation';
+        let fallbackCrop: string | null = null;
+        let fallbackVariety = '';
+        let fallbackFamily = '';
+        let fallbackFeatures = '';
 
         if (fn.includes('chilli') || fn.includes('pepper')) {
           fallbackCrop = 'Chilli';
@@ -236,23 +266,47 @@ export const CropAnalysisFlow: React.FC = () => {
           fallbackVariety = 'HQPM-1';
           fallbackFamily = 'Poaceae';
           fallbackFeatures = 'Tall upright stalks with arching linear ribbon leaf blades';
+        } else if (fn.includes('tomato')) {
+          fallbackCrop = 'Tomato';
+          fallbackVariety = 'Arka Rakshak (Hybrid)';
+          fallbackFamily = 'Solanaceae';
+          fallbackFeatures = 'Serrated pinnate leaflets with reticulate venation';
         }
 
-        const det = {
-          crop: fallbackCrop,
-          crop_key: fallbackCrop.toLowerCase(),
-          confidence: 0.94,
-          family: fallbackFamily,
-          variety_suggestion: fallbackVariety,
-          default_stage: 'flowering',
-          features_detected: fallbackFeatures
-        };
-        setDetectedCropData(det);
-        setCrop(fallbackCrop);
-        setVariety(fallbackVariety);
+        if (fallbackCrop) {
+          const det = {
+            is_crop: true,
+            crop: fallbackCrop,
+            crop_key: fallbackCrop.toLowerCase(),
+            confidence: 0.94,
+            family: fallbackFamily,
+            variety_suggestion: fallbackVariety,
+            default_stage: 'flowering',
+            features_detected: fallbackFeatures
+          };
+          setDetectedCropData(det);
+          setCrop(fallbackCrop);
+          setVariety(fallbackVariety);
+        } else {
+          setDetectedCropData({
+            is_crop: false,
+            crop: null,
+            confidence: 0,
+            features_detected: 'Non-crop image or unclear object.',
+            error_message: 'No agricultural crop leaf detected in the photo. Please capture a clear photo of an actual crop leaf in your field.'
+          });
+          setCrop('');
+        }
       }
     } catch {
-      setCrop('Tomato');
+      setDetectedCropData({
+        is_crop: false,
+        crop: null,
+        confidence: 0,
+        features_detected: 'Analyzer connection issue.',
+        error_message: 'Could not connect to AI analyzer. Please check your connection and retry.'
+      });
+      setCrop('');
     } finally {
       setIsDetectingCrop(false);
     }
@@ -270,6 +324,11 @@ export const CropAnalysisFlow: React.FC = () => {
   const startAnalysis = async () => {
     if (!selectedFile) {
       setErrorMsg('Please capture or select a leaf photograph before proceeding.');
+      return;
+    }
+
+    if (detectedCropData && detectedCropData.is_crop === false) {
+      setErrorMsg(detectedCropData.error_message || 'Cannot analyze non-crop photo. Please photograph a real crop leaf in your field.');
       return;
     }
 
@@ -494,16 +553,74 @@ export const CropAnalysisFlow: React.FC = () => {
 
           {/* AI Automated Crop Analyzer Results Card */}
           {selectedFile && (
-            <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-300 rounded-3xl p-5 shadow-sm space-y-3">
+            <div className={`border-2 rounded-3xl p-5 shadow-sm space-y-3 transition-colors ${
+              detectedCropData?.is_crop === false
+                ? 'bg-gradient-to-br from-rose-50 via-amber-50 to-orange-50 border-rose-300'
+                : 'bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-300'
+            }`}>
               {isDetectingCrop ? (
                 <div className="flex items-center gap-3 py-2 text-emerald-800">
                   <RefreshCw className="w-5 h-5 animate-spin text-emerald-600 shrink-0" />
                   <div className="text-xs">
                     <p className="font-bold">AI Analyzer: Examining leaf contours, venation & morphology...</p>
-                    <p className="text-emerald-600 mt-0.5">Classifying crop species without manual input</p>
+                    <p className="text-emerald-600 mt-0.5">Real-time botanical and foliage verification active</p>
                   </div>
                 </div>
-              ) : detectedCropData ? (
+              ) : detectedCropData?.is_crop === false ? (
+                /* Non-Crop / Non-Agricultural Photo Rejection Card */
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2.5 bg-rose-100 text-rose-700 rounded-2xl shrink-0">
+                      <AlertTriangle className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="bg-rose-600 text-white text-[11px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                          No Crop Detected
+                        </span>
+                        <span className="text-xs font-bold text-rose-800 bg-rose-100 px-2 py-0.5 rounded-full">
+                          AI Verification Active
+                        </span>
+                      </div>
+                      <h3 className="text-lg font-black text-rose-950 mt-1">
+                        Not an Agricultural Plant or Leaf
+                      </h3>
+                    </div>
+                  </div>
+
+                  <div className="text-xs text-rose-900 bg-white/90 p-3.5 rounded-2xl border border-rose-200 space-y-2 leading-relaxed">
+                    <p>
+                      👁️ <b>AI Visual Observation:</b>{' '}
+                      <span className="font-semibold text-slate-800">
+                        {detectedCropData.features_detected || 'Laptop screen, indoor room, or non-plant object detected.'}
+                      </span>
+                    </p>
+                    <p className="text-slate-600">
+                      AgriEdge requires a clear photograph of an actual agricultural crop leaf in the field (Tomato, Chilli, Maize, Rice, Wheat, Cotton, etc.) to evaluate leaf lesions and irrigation needs.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => openLiveCamera()}
+                      className="flex items-center justify-center gap-2 py-3 px-4 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow transition"
+                    >
+                      <Camera className="w-4 h-4" />
+                      <span>Retake with Camera</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => galleryInputRef.current?.click()}
+                      className="flex items-center justify-center gap-2 py-3 px-4 bg-white hover:bg-slate-100 text-slate-800 rounded-xl text-xs font-bold border border-slate-300 shadow-2xs transition"
+                    >
+                      <Upload className="w-4 h-4 text-slate-600" />
+                      <span>Choose Crop Leaf Photo</span>
+                    </button>
+                  </div>
+                </div>
+              ) : detectedCropData?.crop ? (
+                /* Valid Agricultural Crop Card */
                 <div className="space-y-3">
                   <div className="flex items-start justify-between">
                     <div>
@@ -563,7 +680,7 @@ export const CropAnalysisFlow: React.FC = () => {
             </div>
           )}
 
-          {!detectedCropData && selectedFile && (
+          {!isDetectingCrop && !detectedCropData && selectedFile && (
             <div className="flex justify-end pt-2">
               <button
                 onClick={() => setStep(2)}

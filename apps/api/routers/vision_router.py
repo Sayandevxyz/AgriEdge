@@ -53,9 +53,12 @@ async def detect_crop_endpoint(
         filename_hint=file.filename
     )
 
+    is_crop = detection_result.get("is_crop", True)
     return {
-        "success": True,
-        "detection": detection_result
+        "success": is_crop is not False,
+        "is_crop": is_crop is not False,
+        "detection": detection_result,
+        "error": detection_result.get("error_message") if is_crop is False else None
     }
 
 
@@ -95,14 +98,23 @@ async def analyze_crop_image_endpoint(
             }
         )
 
-    # 3. Auto-detect crop if requested or left as default 'auto'
-    detected_crop_data = None
+    # 3. Always verify crop presence first to prevent fake analysis on non-crop images
+    detected_crop_data = await vision_agent.detect_crop(
+        image_bytes=image_bytes,
+        filename_hint=file.filename
+    )
+    if detected_crop_data and detected_crop_data.get("is_crop") is False:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "NOT_A_CROP_IMAGE",
+                "message": detected_crop_data.get("error_message") or "The uploaded photo does not contain an agricultural plant, crop, or leaf. Please take a photo of an actual crop leaf in your field.",
+                "features_detected": detected_crop_data.get("features_detected", "Non-agricultural object or screen")
+            }
+        )
+
     resolved_crop = crop_name
     if not resolved_crop or resolved_crop.lower() in ["auto", "auto_detect", "detect", ""]:
-        detected_crop_data = await vision_agent.detect_crop(
-            image_bytes=image_bytes,
-            filename_hint=file.filename
-        )
         resolved_crop = detected_crop_data.get("crop", "Tomato")
 
     # 4. Vision Agent Image Quality Validation & Optical Analysis

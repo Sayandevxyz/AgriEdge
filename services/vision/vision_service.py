@@ -260,6 +260,24 @@ class CropClassifier:
             # Spectral green dominance
             green_dom = float(np.mean(g) / (np.mean(r) + np.mean(b) + 1e-5))
 
+            # Non-crop verification: if foliage pixels are virtually non-existent (< 4% of image)
+            # or green dominance is low, reject as non-crop (e.g. laptop, room, screen, car)
+            foliage_ratio = len(y_indices) / float(width * height)
+            if not is_field_landscape and (foliage_ratio < 0.04 or green_dom < 0.60):
+                return {
+                    "is_crop": False,
+                    "crop": None,
+                    "crop_key": None,
+                    "confidence": 0.0,
+                    "scientific_name": None,
+                    "family": None,
+                    "variety_suggestion": None,
+                    "default_stage": None,
+                    "features_detected": "Non-crop object or screen detected. Insufficient foliage or vegetation detected in the image.",
+                    "error_message": "No agricultural crop or leaf detected in the photo. Please capture a clear photo of an actual crop leaf in your field.",
+                    "alternatives": []
+                }
+
             # Classification heuristics
             if is_field_landscape:
                 # Outdoor crop field canopy
@@ -309,6 +327,7 @@ class CropClassifier:
         ]
 
         return {
+            "is_crop": True,
             "crop": meta["crop"],
             "crop_key": meta["crop_key"],
             "confidence": round(conf, 2),
@@ -487,10 +506,23 @@ class RemoteVisionProvider(VisionProvider):
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
         
         prompt = (
-            "You are an agricultural botanist. Inspect this image. Identify the crop species. "
-            "Choose strictly from: Maize / Corn, Tomato, Chilli, Rice / Paddy, Wheat, Cotton. "
-            "Return valid JSON only: "
-            '{"crop": "Maize", "confidence": 0.96, "family": "Poaceae", "variety_suggestion": "HQPM-1", "features_detected": "Tall green stalks with linear arching ribbon leaf blades"}'
+            "You are an agricultural computer vision expert and botanist. "
+            "Examine this image carefully. "
+            "STEP 1: Determine whether this image contains a real agricultural plant, crop, or leaf. "
+            "If the image shows a laptop, computer screen, phone, indoor bedroom, person, furniture, vehicle, or non-plant object, "
+            "you MUST return is_crop: false. "
+            "STEP 2: Only if a real agricultural crop or leaf IS present, classify the crop species (Tomato, Potato, Chilli, Rice, Wheat, Cotton, Maize, Onion, etc.). "
+            "Return valid JSON ONLY in this format:\n"
+            "{\n"
+            '  "is_crop": true or false,\n'
+            '  "crop": "Crop Name" or null,\n'
+            '  "confidence": 0.95,\n'
+            '  "scientific_name": "...",\n'
+            '  "family": "...",\n'
+            '  "variety_suggestion": "...",\n'
+            '  "features_detected": "Accurately describe what is visible in the image",\n'
+            '  "error_message": "Describe why it is not a crop if is_crop is false"\n'
+            "}"
         )
 
         payload = {
@@ -523,13 +555,32 @@ class RemoteVisionProvider(VisionProvider):
                     match = re.search(r'\{.*\}', text, re.DOTALL)
                     if match:
                         parsed = json.loads(match.group(0))
-                        c_name = parsed.get("crop", "Maize").strip()
+                        is_crop = parsed.get("is_crop", True)
+                        c_name = str(parsed.get("crop", "")).strip().lower()
+                        features = str(parsed.get("features_detected", "")).lower()
+
+                        non_crop_cues = ["laptop", "screen", "keyboard", "code", "bedroom", "pillow", "phone", "indoor", "person", "human", "face", "car", "vehicle", "furniture", "bed", "room", "no crop", "not a crop", "not a plant", "no plant"]
+                        if is_crop is False or c_name in ["none", "null", "false", "no crop", "not a crop", "unknown", ""] or any(cue in features for cue in non_crop_cues):
+                            return {
+                                "is_crop": False,
+                                "crop": None,
+                                "crop_key": None,
+                                "confidence": 0.0,
+                                "scientific_name": None,
+                                "family": None,
+                                "variety_suggestion": None,
+                                "features_detected": parsed.get("features_detected", "Non-agricultural object or screen detected in image."),
+                                "error_message": parsed.get("error_message") or f"No agricultural crop or leaf detected ({parsed.get('features_detected', 'non-crop object')}). Please take a photo of an actual crop leaf in your field.",
+                                "source": "Google Gemini 2.0 Flash (Real-Time AI)"
+                            }
+
                         for key, meta in CROP_METADATA.items():
-                            if key in c_name.lower():
+                            if key in c_name:
                                 return {
+                                    "is_crop": True,
                                     "crop": meta["crop"],
                                     "crop_key": meta["crop_key"],
-                                    "confidence": float(parsed.get("confidence", 0.96)),
+                                    "confidence": float(parsed.get("confidence", 0.95)),
                                     "scientific_name": meta["scientific_name"],
                                     "family": parsed.get("family", meta["family"]),
                                     "variety_suggestion": parsed.get("variety_suggestion", meta["variety_suggestion"]),
@@ -563,10 +614,23 @@ class RemoteVisionProvider(VisionProvider):
 
                 b64_img = base64.b64encode(image_bytes).decode('utf-8')
                 prompt = (
-                    "You are an expert agronomist. Identify the agricultural crop species from this image. "
-                    "Choose strictly from: Maize / Corn, Tomato, Chilli, Rice, Wheat, Cotton. "
-                    "Respond ONLY with valid JSON in this format: "
-                    '{"crop": "Maize", "confidence": 0.96, "family": "Poaceae", "variety_suggestion": "HQPM-1", "features_detected": "Tall green stalks with linear arching ribbon leaf blades"}'
+                    "You are an agricultural computer vision expert and botanist. "
+                    "Examine this image carefully. "
+                    "STEP 1: Determine whether this image contains a real agricultural plant, crop, or leaf. "
+                    "If the image shows a laptop, computer screen, phone, indoor bedroom, person, furniture, vehicle, or non-plant object, "
+                    "you MUST return is_crop: false. "
+                    "STEP 2: Only if a real agricultural crop or leaf IS present, classify the crop species (Tomato, Potato, Chilli, Rice, Wheat, Cotton, Maize, Onion, etc.). "
+                    "Return valid JSON ONLY in this format:\n"
+                    "{\n"
+                    '  "is_crop": true or false,\n'
+                    '  "crop": "Crop Name" or null,\n'
+                    '  "confidence": 0.95,\n'
+                    '  "scientific_name": "...",\n'
+                    '  "family": "...",\n'
+                    '  "variety_suggestion": "...",\n'
+                    '  "features_detected": "Accurately describe what is visible in the image",\n'
+                    '  "error_message": "Describe why it is not a crop if is_crop is false"\n'
+                    "}"
                 )
 
                 headers = {
@@ -584,7 +648,7 @@ class RemoteVisionProvider(VisionProvider):
                             ]
                         }
                     ],
-                    "max_tokens": 150,
+                    "max_tokens": 200,
                     "temperature": 0.1
                 }
 
@@ -598,22 +662,64 @@ class RemoteVisionProvider(VisionProvider):
                         match = re.search(r'\{.*\}', content, re.DOTALL)
                         if match:
                             parsed = json.loads(match.group(0))
-                            crop_name = parsed.get("crop", "Maize").capitalize()
+                            is_crop = parsed.get("is_crop", True)
+                            crop_raw = str(parsed.get("crop", "")).strip().lower()
+                            features = str(parsed.get("features_detected", "")).lower()
+
+                            non_crop_cues = [
+                                "laptop", "screen", "keyboard", "code", "bedroom", "pillow", "phone",
+                                "indoor", "person", "human", "face", "car", "vehicle", "furniture",
+                                "bed", "room", "no crop", "not a crop", "not a plant", "no plant"
+                            ]
+                            has_non_crop = (
+                                is_crop is False or
+                                crop_raw in ["none", "null", "false", "no crop", "not a crop", "unknown", ""] or
+                                any(cue in features for cue in non_crop_cues)
+                            )
+
+                            if has_non_crop:
+                                return {
+                                    "is_crop": False,
+                                    "crop": None,
+                                    "crop_key": None,
+                                    "confidence": 0.0,
+                                    "scientific_name": None,
+                                    "family": None,
+                                    "variety_suggestion": None,
+                                    "features_detected": parsed.get("features_detected", "Non-agricultural object or screen detected in image."),
+                                    "error_message": parsed.get("error_message") or f"No agricultural crop or leaf detected ({parsed.get('features_detected', 'non-crop object')}). Please take a photo of an actual crop leaf in your field.",
+                                    "source": f"Cloud AI Vision ({self.model})"
+                                }
+
+                            crop_name = parsed.get("crop", "Tomato").capitalize()
                             crop_key = crop_name.lower()
-                            meta = CROP_METADATA.get(crop_key, CROP_METADATA["maize"])
+                            meta = CROP_METADATA.get(crop_key)
+                            if not meta:
+                                for k, m in CROP_METADATA.items():
+                                    if k in crop_key:
+                                        meta = m
+                                        break
+                            if not meta:
+                                meta = {
+                                    "crop": crop_name,
+                                    "crop_key": crop_key,
+                                    "scientific_name": parsed.get("scientific_name", "Plantae"),
+                                    "family": parsed.get("family", "Botanical Family"),
+                                    "variety_suggestion": parsed.get("variety_suggestion", "Local High-Yielding"),
+                                    "default_stage": "vegetative",
+                                    "features_detected": parsed.get("features_detected", "Agricultural foliage")
+                                }
+
                             return {
+                                "is_crop": True,
                                 "crop": meta["crop"],
                                 "crop_key": meta["crop_key"],
                                 "confidence": float(parsed.get("confidence", 0.95)),
-                                "scientific_name": meta["scientific_name"],
-                                "family": parsed.get("family", meta["family"]),
-                                "variety_suggestion": parsed.get("variety_suggestion", meta["variety_suggestion"]),
-                                "default_stage": meta["default_stage"],
-                                "features_detected": parsed.get("features_detected", meta["features_detected"]),
-                                "alternatives": [
-                                    {"crop": "Rice", "confidence": 0.03},
-                                    {"crop": "Tomato", "confidence": 0.02}
-                                ],
+                                "scientific_name": meta.get("scientific_name"),
+                                "family": parsed.get("family", meta.get("family")),
+                                "variety_suggestion": parsed.get("variety_suggestion", meta.get("variety_suggestion")),
+                                "default_stage": meta.get("default_stage", "vegetative"),
+                                "features_detected": parsed.get("features_detected", meta.get("features_detected")),
                                 "source": f"Cloud AI Vision ({self.model})"
                             }
             except Exception:
@@ -731,8 +837,9 @@ class VisionAgent:
         else:
             crop_info = await self.local_provider.detect_crop(image_bytes, filename_hint)
 
+        is_crop = crop_info.get("is_crop", True)
         return {
-            "success": True,
+            "success": is_crop is not False,
             "quality_check": quality_check,
             **crop_info
         }
@@ -753,10 +860,19 @@ class VisionAgent:
                 "error": quality_check.get("message", "Image quality validation failed.")
             }
 
-        # Step 2: Auto-detect crop if unspecified
+        # Step 2: Crop Verification & Auto-detection
+        crop_det = await self.detect_crop(image_bytes)
+        if crop_det.get("is_crop") is False:
+            return {
+                "success": False,
+                "step": "CROP_VERIFICATION",
+                "quality_check": quality_check,
+                "error": crop_det.get("error_message") or "No agricultural crop or leaf detected in the image. Please upload a clear photo of an actual plant or leaf.",
+                "features_detected": crop_det.get("features_detected", "Non-agricultural object")
+            }
+
         resolved_crop = crop_name
         if not resolved_crop or resolved_crop.lower() in ["auto", "auto_detect", "detect", ""]:
-            crop_det = await self.detect_crop(image_bytes)
             resolved_crop = crop_det.get("crop_key", "tomato")
 
         # Step 3: Model Inference via Provider
