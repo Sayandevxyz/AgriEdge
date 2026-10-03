@@ -1,5 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Mic, MicOff, Volume2, X, Sparkles, CheckCircle2, AlertCircle, RotateCcw, Send, CornerDownLeft } from 'lucide-react';
+import {
+  Mic,
+  MicOff,
+  Volume2,
+  X,
+  Sparkles,
+  CheckCircle2,
+  AlertCircle,
+  RotateCcw,
+  Send,
+  Trash2,
+  User
+} from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { LanguageCode } from '../types';
@@ -12,6 +24,20 @@ interface VoiceQueryModalProps {
 
 type VoiceState = 'READY' | 'LISTENING' | 'PROCESSING' | 'RESPONDING' | 'ERROR';
 
+interface ChatMessage {
+  id: string;
+  sender: 'farmer' | 'agriedge';
+  text: string;
+  intent?: string;
+  timestamp: Date;
+}
+
+const WELCOME_MESSAGES: Record<LanguageCode, string> = {
+  en: "Welcome to AgriEdge App! How can I help you with your crops today? Tap the microphone to speak or type any question.",
+  hi: "एग्रीएज ऐप में आपका स्वागत है! आज आपकी फसलों के लिए मैं क्या सहायता कर सकता हूँ? पूछने के लिए माइक दबाएं या प्रश्न लिखें।",
+  ta: "அக்ரிஎட்ஜ் செயலிக்கு நல்வரவு! உங்கள் பயிர்களுக்கு இன்று என்ன உதவி தேவை? கேட்க மைக்கை அழுத்தவும் அல்லது தட்டச்சு செய்யவும்."
+};
+
 export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
   isOpen,
   onClose,
@@ -23,15 +49,15 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
   const [activeLang, setActiveLang] = useState<LanguageCode>(language || 'en');
   const [state, setState] = useState<VoiceState>('READY');
   const [queryInput, setQueryInput] = useState<string>('');
-  const [transcript, setTranscript] = useState<string>('');
-  const [spokenResponse, setSpokenResponse] = useState<string>('');
-  const [intent, setIntent] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   const recognitionRef = useRef<any>(null);
   const silenceTimerRef = useRef<any>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const hasSpokenWelcomeRef = useRef<boolean>(false);
 
   // Stop recognition helper
   const stopListening = useCallback(() => {
@@ -43,7 +69,7 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
       try {
         recognitionRef.current.stop();
       } catch (e) {
-        // Ignore stop errors if already stopped
+        // Ignore stop errors
       }
     }
   }, []);
@@ -72,34 +98,7 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
     }
   }, []);
 
-  // Reset & cleanup when closed or unmounted
-  useEffect(() => {
-    if (!isOpen) {
-      stopListening();
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        try {
-          window.speechSynthesis.cancel();
-        } catch (e) {}
-      }
-      setState('READY');
-      setQueryInput('');
-      setTranscript('');
-      setSpokenResponse('');
-      setIntent('');
-      setErrorMessage('');
-      setIsSpeaking(false);
-    }
-
-    return () => {
-      stopListening();
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        try {
-          window.speechSynthesis.cancel();
-        } catch (e) {}
-      }
-    };
-  }, [isOpen, stopListening]);
-
+  // Text-to-speech speaker
   const speakText = useCallback((text: string, langCode: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window) || !text) return;
 
@@ -134,16 +133,78 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
       }
 
       utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => setIsSpeaking(false);
-      utterance.onerror = () => setIsSpeaking(false);
+      utterance.onend = () => {
+        setIsSpeaking(false);
+        setState('READY');
+      };
+      utterance.onerror = () => {
+        setIsSpeaking(false);
+        setState('READY');
+      };
 
       window.speechSynthesis.speak(utterance);
     } catch (e) {
       console.warn('Speech synthesis error:', e);
       setIsSpeaking(false);
+      setState('READY');
     }
   }, [voices]);
 
+  // Scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (isOpen) {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, isOpen, state]);
+
+  // Welcome message initialization when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      if (messages.length === 0) {
+        const welcomeText = WELCOME_MESSAGES[activeLang] || WELCOME_MESSAGES.en;
+        const initialMsg: ChatMessage = {
+          id: 'welcome-' + Date.now(),
+          sender: 'agriedge',
+          text: welcomeText,
+          timestamp: new Date()
+        };
+        setMessages([initialMsg]);
+
+        // Speak welcome greeting aloud on opening
+        if (!hasSpokenWelcomeRef.current) {
+          hasSpokenWelcomeRef.current = true;
+          // Short delay to allow audio context to activate
+          setTimeout(() => {
+            speakText(welcomeText, activeLang);
+          }, 400);
+        }
+      }
+    } else {
+      // Reset when modal closes
+      stopListening();
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel();
+        } catch (e) {}
+      }
+      setState('READY');
+      setQueryInput('');
+      setErrorMessage('');
+      setIsSpeaking(false);
+      hasSpokenWelcomeRef.current = false;
+    }
+
+    return () => {
+      stopListening();
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel();
+        } catch (e) {}
+      }
+    };
+  }, [isOpen, activeLang, speakText, stopListening]);
+
+  // Switch language and speak new localized greeting
   const handleLangSwitch = useCallback((lang: LanguageCode) => {
     setActiveLang(lang);
     setLanguage(lang);
@@ -155,8 +216,19 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
     }
     setIsSpeaking(false);
     setErrorMessage('');
-  }, [setLanguage, stopListening]);
 
+    const welcomeText = WELCOME_MESSAGES[lang] || WELCOME_MESSAGES.en;
+    const langMsg: ChatMessage = {
+      id: `lang-switch-${Date.now()}`,
+      sender: 'agriedge',
+      text: welcomeText,
+      timestamp: new Date()
+    };
+    setMessages((prev) => [...prev, langMsg]);
+    speakText(welcomeText, lang);
+  }, [setLanguage, stopListening, speakText]);
+
+  // Submit voice or text query (Multi-turn enabled)
   const sendVoiceQuery = useCallback(async (queryText: string) => {
     const textToSend = queryText?.trim();
     if (!textToSend) {
@@ -172,9 +244,17 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
 
     stopListening();
     setState('PROCESSING');
-    setTranscript(textToSend);
-    setQueryInput(textToSend);
+    setQueryInput('');
     setErrorMessage('');
+
+    // Add user question to conversation list
+    const userMsg: ChatMessage = {
+      id: 'farmer-' + Date.now(),
+      sender: 'farmer',
+      text: textToSend,
+      timestamp: new Date()
+    };
+    setMessages((prev) => [...prev, userMsg]);
 
     try {
       const formData = new FormData();
@@ -194,39 +274,50 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
 
       if (res.ok) {
         const data = await res.json();
-        setIntent(data.nlu_analysis?.intent || 'GENERAL_AGRICULTURE_QUERY');
-        setSpokenResponse(data.spoken_response);
+        const spokenAnswer = data.spoken_response || 'AgriEdge advisory generated successfully.';
+
+        // Add assistant response to conversation list
+        const aiMsg: ChatMessage = {
+          id: 'ai-' + Date.now(),
+          sender: 'agriedge',
+          text: spokenAnswer,
+          intent: data.nlu_analysis?.intent,
+          timestamp: new Date()
+        };
+        setMessages((prev) => [...prev, aiMsg]);
+
         setState('RESPONDING');
 
         // Play realistic speech in the target language
         const responseLang = data.language || activeLang;
-        speakText(data.spoken_response, responseLang);
+        speakText(spokenAnswer, responseLang);
 
         if (data.advisory && onAdvisoryReceived) {
           onAdvisoryReceived(data.advisory);
         }
       } else {
         setState('ERROR');
-        setErrorMessage(
+        const errText =
           activeLang === 'hi'
             ? 'सलाह प्राप्त करने में त्रुटि। कृपया पुनः प्रयास करें।'
             : activeLang === 'ta'
             ? 'ஆலோசனை பெற முடியவில்லை. மீண்டும் முயற்சிக்கவும்.'
-            : 'Failed to process voice query. Please try again.'
-        );
+            : 'Failed to process voice query. Please try again.';
+        setErrorMessage(errText);
       }
     } catch (err) {
       setState('ERROR');
-      setErrorMessage(
+      const connErr =
         activeLang === 'hi'
           ? 'कनेक्शन त्रुटि। कृपया नेटवर्क जांचें।'
           : activeLang === 'ta'
           ? 'இணைப்பு பிழை. இணைய இணைப்பை சரிபார்க்கவும்.'
-          : 'Connection error. Please check your network connection.'
-      );
+          : 'Connection error. Please check your network connection.';
+      setErrorMessage(connErr);
     }
   }, [activeLang, token, stopListening, speakText, onAdvisoryReceived]);
 
+  // Continuous speech recognition
   const startListening = useCallback(() => {
     stopListening();
     setState('LISTENING');
@@ -280,9 +371,8 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
       if (fullSpoken) {
         capturedText = fullSpoken;
         setQueryInput(fullSpoken);
-        setTranscript(fullSpoken);
 
-        // Reset silence auto-submit timer (1.8 seconds of quiet after speech finishes)
+        // Reset silence auto-submit timer (1.8s quiet after speech finishes auto-sends query)
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
         silenceTimerRef.current = setTimeout(() => {
           stopListening();
@@ -332,6 +422,25 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
     }
   }, [queryInput, stopListening, sendVoiceQuery]);
 
+  const clearChatHistory = () => {
+    stopListening();
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    const welcomeText = WELCOME_MESSAGES[activeLang] || WELCOME_MESSAGES.en;
+    setMessages([
+      {
+        id: 'welcome-' + Date.now(),
+        sender: 'agriedge',
+        text: welcomeText,
+        timestamp: new Date()
+      }
+    ]);
+    setState('READY');
+    setQueryInput('');
+    setErrorMessage('');
+  };
+
   const quickQuestions = {
     en: [
       { label: '💧 Irrigation advice', query: 'Should I irrigate my field today?' },
@@ -353,38 +462,51 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
     ]
   };
 
-  // Only return null right before rendering JSX, after all hooks and functions are declared
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-3xl max-w-lg w-full p-4 sm:p-6 shadow-2xl relative border border-slate-100 max-h-[92vh] overflow-y-auto my-auto animate-in fade-in zoom-in-95 duration-200">
+      <div className="bg-white rounded-3xl max-w-lg w-full p-4 sm:p-6 shadow-2xl relative border border-slate-100 max-h-[92vh] flex flex-col my-auto animate-in fade-in zoom-in-95 duration-200">
         
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition"
-        >
-          <X className="w-5 h-5" />
-        </button>
-
-        {/* Modal Header */}
-        <div className="text-center mb-3">
-          <div className="inline-flex items-center gap-1.5 bg-agri-50 text-agri-800 text-xs font-semibold px-3 py-1 rounded-full mb-2 border border-agri-200">
-            <Sparkles className="w-3.5 h-3.5 text-agri-600" />
-            Multilingual Voice & AI Assistant
+        {/* Header with Title, Clear Chat & Close */}
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-agri-100 flex items-center justify-center text-agri-700">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-base font-extrabold text-slate-900 leading-tight">
+                {activeLang === 'hi' ? 'एग्रीएज वॉयस चैट' : activeLang === 'ta' ? 'அக்ரிஎட்ஜ் குரல் உரையாடல்' : 'AgriEdge Voice Assistant'}
+              </h3>
+              <p className="text-[11px] text-slate-500 font-medium">
+                {activeLang === 'hi' ? 'कई प्रश्न पूछें (हिंदी • தமிழ் • English)' : activeLang === 'ta' ? 'தொடர்ந்து பல கேள்விகள் கேட்கலாம்' : 'Ask multiple questions in your language'}
+              </p>
+            </div>
           </div>
-          <h3 className="text-xl font-bold text-slate-900">
-            {activeLang === 'hi'
-              ? 'आवाज से खेती संबंधी प्रश्न पूछें'
-              : activeLang === 'ta'
-              ? 'குரல் மூலம் விவசாய ஆலோசனைகள் கேளுங்கள்'
-              : 'Ask Any Crop Advice by Voice'}
-          </h3>
+
+          <div className="flex items-center gap-1.5">
+            {messages.length > 1 && (
+              <button
+                type="button"
+                onClick={clearChatHistory}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition"
+                title="Restart conversation"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition"
+              title="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Language Selection Pills */}
-        <div className="flex items-center justify-center gap-2 mb-5">
+        <div className="flex items-center justify-center gap-2 my-2.5 shrink-0">
           <button
             type="button"
             onClick={() => handleLangSwitch('en')}
@@ -420,76 +542,144 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
           </button>
         </div>
 
-        {/* Central Voice Mic Circle */}
-        <div className="flex flex-col items-center justify-center my-4">
-          <div className="relative">
-            {state === 'LISTENING' && (
-              <>
-                <div className="absolute inset-0 rounded-full bg-agri-400 animate-ping opacity-35"></div>
-                <div className="absolute -inset-3 rounded-full bg-agri-200 animate-pulse opacity-50"></div>
-              </>
-            )}
-            {state === 'PROCESSING' && (
-              <div className="absolute -inset-2 rounded-full border-4 border-amber-400 border-t-transparent animate-spin"></div>
-            )}
-            <button
-              onClick={() => {
-                if (state === 'LISTENING') {
-                  handleManualStopOrSend();
-                } else if (state === 'RESPONDING') {
-                  speakText(spokenResponse, activeLang);
-                } else {
-                  startListening();
-                }
-              }}
-              className={`w-20 h-20 rounded-full flex items-center justify-center relative z-10 shadow-lg transition-transform active:scale-95 ${
-                state === 'LISTENING'
-                  ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/30'
-                  : state === 'PROCESSING'
-                  ? 'bg-amber-500 text-white shadow-amber-500/30'
-                  : state === 'RESPONDING'
-                  ? 'bg-agri-600 text-white shadow-agri-600/30'
-                  : 'bg-slate-900 hover:bg-slate-800 text-white shadow-slate-900/20'
-              }`}
-            >
-              {state === 'LISTENING' ? (
-                <MicOff className="w-8 h-8" />
-              ) : state === 'PROCESSING' ? (
-                <RotateCcw className="w-8 h-8 animate-spin" />
-              ) : state === 'RESPONDING' ? (
-                <Volume2 className={`w-8 h-8 ${isSpeaking ? 'animate-bounce' : ''}`} />
-              ) : (
-                <Mic className="w-8 h-8" />
-              )}
-            </button>
-          </div>
+        {/* Scrollable Conversation Thread (Supports Multiple Questions) */}
+        <div className="flex-1 overflow-y-auto max-h-[46vh] sm:max-h-[50vh] pr-1 space-y-3 py-2">
+          {messages.map((msg) => {
+            const isFarmer = msg.sender === 'farmer';
+            return (
+              <div
+                key={msg.id}
+                className={`flex gap-2.5 ${isFarmer ? 'justify-end' : 'justify-start'} animate-in fade-in duration-200`}
+              >
+                {!isFarmer && (
+                  <div className="w-7 h-7 rounded-full bg-agri-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </div>
+                )}
 
-          <div className="mt-3 text-center">
-            <span
-              className={`text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
-                state === 'LISTENING'
-                  ? 'bg-red-100 text-red-700'
-                  : state === 'PROCESSING'
-                  ? 'bg-amber-100 text-amber-800'
-                  : state === 'RESPONDING'
-                  ? 'bg-agri-100 text-agri-800'
-                  : 'bg-slate-100 text-slate-700'
-              }`}
-            >
-              {state === 'READY' && (activeLang === 'hi' ? 'बोलने के लिए माइक दबाएं' : activeLang === 'ta' ? 'பேச மைக் அழுத்தவும்' : 'Tap Mic to Speak')}
-              {state === 'LISTENING' && (activeLang === 'hi' ? 'सुन रहा है... (रुकने पर स्वतः भेजेगा)' : activeLang === 'ta' ? 'கேட்கிறது... (நிறுத்தினால் அனுப்பும்)' : 'Listening... (auto-submits on pause)')}
-              {state === 'PROCESSING' && (activeLang === 'hi' ? 'AI विश्लेषण कर रहा है...' : activeLang === 'ta' ? 'AI பரிசீலிக்கிறது...' : 'AI Analyzing Query...')}
-              {state === 'RESPONDING' && (activeLang === 'hi' ? 'सलाह तैयार है' : activeLang === 'ta' ? 'பதில் தயாராக உள்ளது' : 'Advice Ready')}
-              {state === 'ERROR' && (activeLang === 'hi' ? 'पुनः प्रयास करें' : activeLang === 'ta' ? 'மீண்டும் முயற்சிக்கவும்' : 'Please Retry')}
-            </span>
-          </div>
+                <div
+                  className={`max-w-[85%] rounded-2xl p-3 text-xs sm:text-sm leading-relaxed shadow-xs ${
+                    isFarmer
+                      ? 'bg-agri-700 text-white rounded-br-xs'
+                      : 'bg-slate-100 text-slate-900 border border-slate-200/80 rounded-bl-xs'
+                  }`}
+                >
+                  <p className="font-medium whitespace-pre-wrap">{msg.text}</p>
+
+                  {!isFarmer && (
+                    <div className="mt-2 pt-1.5 border-t border-slate-200/60 flex items-center justify-between">
+                      <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
+                        AgriEdge AI
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => speakText(msg.text, activeLang)}
+                        className="text-[11px] font-semibold text-agri-700 hover:text-agri-900 flex items-center gap-1 bg-white px-2 py-0.5 rounded-md border border-slate-200 hover:shadow-2xs transition"
+                        title="Play audio aloud"
+                      >
+                        <Volume2 className="w-3 h-3" />
+                        <span>{activeLang === 'hi' ? 'सुनें' : activeLang === 'ta' ? 'கேள்' : 'Listen'}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {isFarmer && (
+                  <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center shrink-0 mt-0.5">
+                    <User className="w-3.5 h-3.5" />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Processing Indicator */}
+          {state === 'PROCESSING' && (
+            <div className="flex gap-2.5 justify-start animate-in fade-in">
+              <div className="w-7 h-7 rounded-full bg-agri-600 text-white flex items-center justify-center shrink-0">
+                <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+              </div>
+              <div className="bg-slate-100 text-slate-600 rounded-2xl p-3 text-xs font-semibold flex items-center gap-2 border border-slate-200">
+                <div className="w-2 h-2 rounded-full bg-agri-600 animate-ping"></div>
+                <span>
+                  {activeLang === 'hi' ? 'उत्तर तैयार हो रहा है...' : activeLang === 'ta' ? 'பதில் தயாராகிறது...' : 'Analyzing crop intelligence...'}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div ref={chatEndRef} />
         </div>
 
-        {/* Live Transcript / Text Box with Edit & Send Button */}
-        <div className="mt-3">
-          <label className="block text-xs font-medium text-slate-600 mb-1">
-            {activeLang === 'hi' ? 'आपका प्रश्न (बोलें या यहाँ लिखें):' : activeLang === 'ta' ? 'உங்கள் கேள்வி (பேசவும் அல்லது தட்டச்சு செய்யவும்):' : 'Your Query (speak or type):'}
-          </label>
+        {/* Error Notification */}
+        {errorMessage && (
+          <div className="my-2 p-2.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2 shrink-0">
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
+
+        {/* Interactive Controls & Input Bar */}
+        <div className="pt-2 border-t border-slate-100 shrink-0 space-y-2.5">
+          
+          {/* Centered Voice Mic Button */}
+          <div className="flex items-center justify-center gap-3">
+            <div className="relative">
+              {state === 'LISTENING' && (
+                <>
+                  <div className="absolute inset-0 rounded-full bg-red-400 animate-ping opacity-35"></div>
+                  <div className="absolute -inset-2.5 rounded-full bg-red-200 animate-pulse opacity-50"></div>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  if (state === 'LISTENING') {
+                    handleManualStopOrSend();
+                  } else {
+                    startListening();
+                  }
+                }}
+                className={`w-14 h-14 rounded-full flex items-center justify-center relative z-10 shadow-md transition-all active:scale-95 ${
+                  state === 'LISTENING'
+                    ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/30'
+                    : state === 'PROCESSING'
+                    ? 'bg-amber-500 text-white shadow-amber-500/30'
+                    : 'bg-agri-700 hover:bg-agri-800 text-white shadow-agri-700/25'
+                }`}
+                title={state === 'LISTENING' ? 'Tap to stop & submit' : 'Tap to speak your next question'}
+              >
+                {state === 'LISTENING' ? (
+                  <MicOff className="w-6 h-6 animate-pulse" />
+                ) : (
+                  <Mic className="w-6 h-6" />
+                )}
+              </button>
+            </div>
+
+            <div className="text-left">
+              <span
+                className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                  state === 'LISTENING'
+                    ? 'bg-red-100 text-red-700'
+                    : state === 'PROCESSING'
+                    ? 'bg-amber-100 text-amber-800'
+                    : 'bg-agri-100 text-agri-800'
+                }`}
+              >
+                {state === 'READY' && (activeLang === 'hi' ? 'बोलने के लिए माइक दबाएं' : activeLang === 'ta' ? 'பேச மைக் அழுத்தவும்' : 'Tap Mic to Speak Next')}
+                {state === 'LISTENING' && (activeLang === 'hi' ? 'सुन रहा है... (रुकने पर भेजेगा)' : activeLang === 'ta' ? 'கேட்கிறது... (நிறுத்தினால் அனுப்பும்)' : 'Listening... (auto-sends on pause)')}
+                {state === 'PROCESSING' && (activeLang === 'hi' ? 'AI सोच रहा है...' : activeLang === 'ta' ? 'AI சிந்திக்கிறது...' : 'AI Thinking...')}
+                {state === 'RESPONDING' && (activeLang === 'hi' ? 'एग्रीएज बोल रहा है' : activeLang === 'ta' ? 'அக்ரிஎட்ஜ் பேசுகிறது' : 'Speaking advice')}
+                {state === 'ERROR' && (activeLang === 'hi' ? 'पुनः प्रयास करें' : activeLang === 'ta' ? 'மீண்டும் முயற்சிக்கவும்' : 'Please retry')}
+              </span>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                {activeLang === 'hi' ? 'लगातार कई सवाल पूछ सकते हैं' : activeLang === 'ta' ? 'அடுத்தடுத்த பல கேள்விகளை கேட்கலாம்' : 'You can ask multiple questions continuously'}
+              </p>
+            </div>
+          </div>
+
+          {/* Text Input with Send Button */}
           <div className="flex gap-2">
             <input
               type="text"
@@ -503,75 +693,38 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
               }}
               placeholder={
                 activeLang === 'hi'
-                  ? 'जैसे: क्या आज टमाटर में पानी देना चाहिए?'
+                  ? 'अपना अगला प्रश्न बोलें या यहाँ लिखें...'
                   : activeLang === 'ta'
-                  ? 'உதாரணம்: இன்று தக்காளிக்கு தண்ணீர் பாய்ச்சலாமா?'
-                  : 'e.g. Should I irrigate my tomato crop today?'
+                  ? 'அடுத்த கேள்வியை பேசவும் அல்லது தட்டச்சு செய்யவும்...'
+                  : 'Speak or type your next question...'
               }
-              className="flex-1 text-sm px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-agri-500 focus:border-agri-500"
+              className="flex-1 text-xs sm:text-sm px-3.5 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-agri-500 bg-slate-50/50"
             />
             <button
+              type="button"
               onClick={() => sendVoiceQuery(queryInput)}
               disabled={state === 'PROCESSING' || !queryInput.trim()}
-              className="bg-agri-600 hover:bg-agri-700 disabled:opacity-50 text-white px-3 py-2 rounded-xl text-sm font-semibold flex items-center gap-1 transition"
+              className="bg-agri-700 hover:bg-agri-800 disabled:opacity-40 text-white px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
             >
               <Send className="w-3.5 h-3.5" />
-              <span>{activeLang === 'hi' ? 'पूछें' : activeLang === 'ta' ? 'கேள்' : 'Ask'}</span>
+              <span>{activeLang === 'hi' ? 'पूछें' : activeLang === 'ta' ? 'அனுப்பு' : 'Ask'}</span>
             </button>
           </div>
-        </div>
 
-        {/* Error Notification */}
-        {errorMessage && (
-          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
-            <span>{errorMessage}</span>
-          </div>
-        )}
-
-        {/* Response Box */}
-        {spokenResponse && (
-          <div className="mt-4 p-4 bg-agri-50/80 border border-agri-200 rounded-2xl animate-in fade-in">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-agri-900">
-                <CheckCircle2 className="w-4 h-4 text-agri-600" />
-                <span>{activeLang === 'hi' ? 'AgriEdge AI सलाह:' : activeLang === 'ta' ? 'AgriEdge AI ஆலோசனை:' : 'AgriEdge AI Spoken Advice:'}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => speakText(spokenResponse, activeLang)}
-                className="text-xs text-agri-700 hover:text-agri-900 flex items-center gap-1 font-medium bg-white px-2 py-1 rounded-lg border border-agri-200 hover:shadow-sm"
-              >
-                <Volume2 className="w-3.5 h-3.5" />
-                <span>{activeLang === 'hi' ? 'दोबारा सुनें' : activeLang === 'ta' ? 'மீண்டும் கேள்' : 'Replay'}</span>
-              </button>
-            </div>
-            <p className="text-slate-800 text-sm leading-relaxed font-medium">
-              {spokenResponse}
-            </p>
-          </div>
-        )}
-
-        {/* 1-Tap Quick Question Chips */}
-        <div className="mt-4 pt-3 border-t border-slate-100">
-          <p className="text-xs text-slate-500 font-medium mb-2">
-            {activeLang === 'hi' ? 'या इन प्रश्नों पर टैप करें:' : activeLang === 'ta' ? 'அல்லது விரைவு கேள்விகளை தேர்வு செய்யவும்:' : 'Or tap a quick question:'}
-          </p>
-          <div className="flex flex-wrap gap-1.5">
+          {/* 1-Tap Quick Questions Chips */}
+          <div className="pt-1 flex flex-wrap gap-1.5">
             {quickQuestions[activeLang]?.map((item, idx) => (
               <button
                 key={idx}
                 type="button"
-                onClick={() => {
-                  setQueryInput(item.query);
-                  sendVoiceQuery(item.query);
-                }}
-                className="text-xs bg-slate-50 hover:bg-agri-50 hover:text-agri-800 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200 hover:border-agri-300 transition text-left"
+                onClick={() => sendVoiceQuery(item.query)}
+                className="text-[11px] bg-slate-100 hover:bg-agri-50 hover:text-agri-900 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200 transition text-left font-medium"
               >
                 {item.label}
               </button>
             ))}
           </div>
+
         </div>
 
       </div>
