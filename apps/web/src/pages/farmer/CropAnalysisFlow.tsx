@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../context/AuthContext';
@@ -13,11 +13,10 @@ import {
   Sparkles,
   ArrowRight,
   ArrowLeft,
-  Sprout,
-  Droplets,
-  Calendar,
-  Layers,
-  MapPin
+  X,
+  FlipHorizontal,
+  Image as ImageIcon,
+  RotateCcw
 } from 'lucide-react';
 
 export const CropAnalysisFlow: React.FC = () => {
@@ -32,6 +31,12 @@ export const CropAnalysisFlow: React.FC = () => {
   const [step, setStep] = useState<number>(1);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  // Live Camera Viewfinder States
+  const [isLiveCameraOpen, setIsLiveCameraOpen] = useState<boolean>(false);
+  const [cameraFacingMode, setCameraFacingMode] = useState<'environment' | 'user'>('environment');
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [isCapturing, setIsCapturing] = useState<boolean>(false);
 
   // Step 2 Form Context
   const [crop, setCrop] = useState<string>('Tomato');
@@ -61,7 +66,121 @@ export const CropAnalysisFlow: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [advisoryResult, setAdvisoryResult] = useState<AdvisoryPayload | null>(null);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // File & Media Refs
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  // Stop camera helper
+  const stopLiveCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setIsLiveCameraOpen(false);
+    setCameraError(null);
+  };
+
+  // Cleanup camera stream on unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
+
+  // Open live in-app camera or fallback to native camera input
+  const openLiveCamera = async (mode: 'environment' | 'user' = cameraFacingMode) => {
+    setErrorMsg(null);
+    setCameraError(null);
+
+    // If getUserMedia is not supported (e.g. older browser or insecure HTTP), fallback to native camera
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      cameraInputRef.current?.click();
+      return;
+    }
+
+    try {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: mode },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      });
+
+      streamRef.current = stream;
+      setIsLiveCameraOpen(true);
+      setCameraFacingMode(mode);
+
+      // Give DOM time to mount video element
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch((err) => console.warn('Video play error:', err));
+        }
+      }, 100);
+    } catch (err: any) {
+      console.warn('getUserMedia error, falling back to native phone camera:', err);
+      // Fallback directly to native phone camera file input
+      stopLiveCamera();
+      cameraInputRef.current?.click();
+    }
+  };
+
+  // Switch between front and rear cameras
+  const toggleCameraFacingMode = () => {
+    const nextMode = cameraFacingMode === 'environment' ? 'user' : 'environment';
+    openLiveCamera(nextMode);
+  };
+
+  // Capture frame from live camera video stream
+  const capturePhotoFromLiveCamera = () => {
+    if (!videoRef.current) return;
+    setIsCapturing(true);
+
+    try {
+      const video = videoRef.current;
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 1280;
+      canvas.height = video.videoHeight || 720;
+
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              const file = new File([blob], `leaf-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
+              setSelectedFile(file);
+              setPreviewUrl(URL.createObjectURL(blob));
+              triggerCropDetection(file);
+              stopLiveCamera();
+            } else {
+              setCameraError('Failed to capture image frame. Please try again.');
+            }
+            setIsCapturing(false);
+          },
+          'image/jpeg',
+          0.92
+        );
+      }
+    } catch (err) {
+      console.error('Frame capture exception:', err);
+      setIsCapturing(false);
+      setCameraError('Camera capture error. Try uploading a photo directly.');
+    }
+  };
 
   // Automated AI Crop Detection API Trigger
   const triggerCropDetection = async (file: File) => {
@@ -102,6 +221,11 @@ export const CropAnalysisFlow: React.FC = () => {
           fallbackVariety = 'BPT 5204 (Samba Mahsuri)';
           fallbackFamily = 'Poaceae';
           fallbackFeatures = 'Elongated linear blade with parallel venation';
+        } else if (fn.includes('wheat')) {
+          fallbackCrop = 'Wheat';
+          fallbackVariety = 'HD-2967';
+          fallbackFamily = 'Poaceae';
+          fallbackFeatures = 'Slender linear leaves with fine parallel veins';
         } else if (fn.includes('cotton')) {
           fallbackCrop = 'Cotton';
           fallbackVariety = 'Bt Cotton (Bollgard II)';
@@ -111,7 +235,7 @@ export const CropAnalysisFlow: React.FC = () => {
           fallbackCrop = 'Maize';
           fallbackVariety = 'HQPM-1';
           fallbackFamily = 'Poaceae';
-          fallbackFeatures = 'Tall upright stalks with arching linear ribbon leaf blades and pale central midrib';
+          fallbackFeatures = 'Tall upright stalks with arching linear ribbon leaf blades';
         }
 
         const det = {
@@ -128,14 +252,11 @@ export const CropAnalysisFlow: React.FC = () => {
         setVariety(fallbackVariety);
       }
     } catch {
-      // Graceful offline fallback
       setCrop('Tomato');
     } finally {
       setIsDetectingCrop(false);
     }
   };
-
-
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -148,7 +269,7 @@ export const CropAnalysisFlow: React.FC = () => {
 
   const startAnalysis = async () => {
     if (!selectedFile) {
-      setErrorMsg('Please upload a leaf photograph before proceeding.');
+      setErrorMsg('Please capture or select a leaf photograph before proceeding.');
       return;
     }
 
@@ -210,11 +331,29 @@ export const CropAnalysisFlow: React.FC = () => {
   };
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6 pb-24 space-y-6">
+    <div className="max-w-3xl mx-auto px-4 py-4 sm:py-6 pb-28 space-y-5">
       
-      {/* 4-Step Progress Stepper */}
+      {/* Hidden Native Camera & Gallery File Inputs */}
+      <input
+        type="file"
+        ref={cameraInputRef}
+        onChange={handleFileChange}
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+      />
+      <input
+        type="file"
+        ref={galleryInputRef}
+        onChange={handleFileChange}
+        accept="image/*"
+        className="hidden"
+      />
+
+      {/* 4-Step Responsive Stepper */}
       <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
-        <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
+        {/* Desktop Stepper Labels */}
+        <div className="hidden sm:flex items-center justify-between text-xs font-semibold text-slate-500">
           <span className={step >= 1 ? 'text-agri-700 font-bold' : ''}>1. Photo & AI Detection</span>
           <span>→</span>
           <span className={step >= 2 ? 'text-agri-700 font-bold' : ''}>2. Context (Auto)</span>
@@ -223,7 +362,34 @@ export const CropAnalysisFlow: React.FC = () => {
           <span>→</span>
           <span className={step >= 4 ? 'text-agri-700 font-bold' : ''}>4. Unified Advisory</span>
         </div>
-        <div className="w-full bg-slate-100 h-1.5 rounded-full mt-2.5 overflow-hidden">
+
+        {/* Mobile Stepper Badges */}
+        <div className="flex sm:hidden items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            {[1, 2, 3, 4].map((s) => (
+              <span
+                key={s}
+                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition ${
+                  step === s
+                    ? 'bg-agri-700 text-white shadow-sm'
+                    : step > s
+                    ? 'bg-agri-100 text-agri-800'
+                    : 'bg-slate-100 text-slate-400'
+                }`}
+              >
+                {step > s ? '✓' : s}
+              </span>
+            ))}
+          </div>
+          <span className="text-xs font-bold text-agri-900">
+            {step === 1 && 'Step 1: Leaf Photo'}
+            {step === 2 && 'Step 2: Crop Context'}
+            {step === 3 && 'Step 3: AI Triage'}
+            {step === 4 && 'Step 4: Decision'}
+          </span>
+        </div>
+
+        <div className="w-full bg-slate-100 h-1.5 rounded-full mt-3 overflow-hidden">
           <div
             className="bg-agri-600 h-full transition-all duration-300"
             style={{ width: `${(step / 4) * 100}%` }}
@@ -238,49 +404,93 @@ export const CropAnalysisFlow: React.FC = () => {
         </div>
       )}
 
-      {/* STEP 1: Upload Image */}
+      {/* STEP 1: Capture with Camera or Choose Photo */}
       {step === 1 && (
-        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
+        <div className="bg-white rounded-3xl p-5 sm:p-8 border border-slate-200 shadow-sm space-y-5">
           <div className="text-center">
-            <h2 className="text-2xl font-black text-slate-900">Step 1: Upload Crop Leaf Photo</h2>
+            <h2 className="text-xl sm:text-2xl font-black text-slate-900">Photograph or Upload Crop Leaf</h2>
             <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-              Photograph any crop leaf. Our AI Vision model automatically detects the <b>crop type</b>, <b>growth stage</b>, and <b>diseases</b> directly from the image without requiring manual selection.
+              Use your phone's camera to photograph any crop leaf. Our AI Vision automatically detects the <b>crop type</b>, <b>variety</b>, and <b>leaf health</b>.
             </p>
           </div>
 
-          {/* Upload Drop Zone */}
-          <div
-            onClick={() => fileInputRef.current?.click()}
-            className="border-2 border-dashed border-slate-300 hover:border-agri-500 bg-slate-50 hover:bg-agri-50/40 rounded-3xl p-8 text-center cursor-pointer transition flex flex-col items-center justify-center min-h-[220px]"
-          >
-            {previewUrl ? (
-              <div className="space-y-3">
+          {/* If No Image Selected: Dual Mobile-Friendly Cards */}
+          {!previewUrl ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
+              
+              {/* Option A: Phone Camera (High-Contrast Green Card) */}
+              <button
+                type="button"
+                onClick={() => openLiveCamera()}
+                className="flex flex-col items-center justify-center p-6 bg-gradient-to-br from-agri-600 to-agri-800 hover:from-agri-700 hover:to-agri-900 text-white rounded-3xl shadow-lg shadow-agri-900/15 transition-all active:scale-[0.98] text-center group border border-agri-500/30"
+              >
+                <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                  <Camera className="w-8 h-8 text-white" />
+                </div>
+                <h3 className="font-extrabold text-lg text-white">Take Photo (Camera)</h3>
+                <p className="text-xs text-agri-100 mt-1">
+                  Open phone camera to snap a live photo of the leaf
+                </p>
+                <span className="mt-4 px-4 py-1.5 bg-white text-agri-900 text-xs font-bold rounded-full shadow-sm">
+                  📸 Open Camera
+                </span>
+              </button>
+
+              {/* Option B: Gallery / Files Upload Card */}
+              <button
+                type="button"
+                onClick={() => galleryInputRef.current?.click()}
+                className="flex flex-col items-center justify-center p-6 bg-slate-50 hover:bg-slate-100 text-slate-800 rounded-3xl border-2 border-dashed border-slate-300 hover:border-agri-500 transition-all active:scale-[0.98] text-center group"
+              >
+                <div className="w-16 h-16 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                  <ImageIcon className="w-8 h-8" />
+                </div>
+                <h3 className="font-extrabold text-lg text-slate-900">Upload from Gallery</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Choose an existing leaf photo from your phone files
+                </p>
+                <span className="mt-4 px-4 py-1.5 bg-slate-200 text-slate-800 text-xs font-bold rounded-full">
+                  📁 Choose File
+                </span>
+              </button>
+
+            </div>
+          ) : (
+            /* If Image Selected: Leaf Preview & Retake Options */
+            <div className="space-y-4">
+              <div className="relative rounded-3xl overflow-hidden border-2 border-agri-300 shadow-md bg-slate-900 flex items-center justify-center max-h-[340px]">
                 <img
                   src={previewUrl}
-                  alt="Selected Leaf Preview"
-                  className="w-44 h-44 object-cover rounded-2xl mx-auto border-2 border-white shadow-md"
+                  alt="Captured Crop Leaf"
+                  className="w-full h-auto max-h-[340px] object-contain"
                 />
-                <p className="text-xs font-semibold text-agri-700">Tap to photograph another leaf</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="w-16 h-16 rounded-full bg-agri-100 text-agri-700 flex items-center justify-center mx-auto">
-                  <Camera className="w-8 h-8" />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-slate-800">Tap to take photo or choose leaf</p>
-                  <p className="text-xs text-slate-400 mt-0.5">JPEG, PNG or WebP · AI Auto-Detects Crop Type</p>
+                <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md text-white text-[11px] font-bold px-3 py-1 rounded-full flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  Leaf Photo Ready
                 </div>
               </div>
-            )}
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept="image/*"
-              className="hidden"
-            />
-          </div>
+
+              {/* Retake / Change Buttons */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => openLiveCamera()}
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-agri-50 hover:bg-agri-100 text-agri-800 rounded-xl text-xs font-bold border border-agri-200 transition"
+                >
+                  <Camera className="w-4 h-4 text-agri-600" />
+                  <span>Retake (Camera)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => galleryInputRef.current?.click()}
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 transition"
+                >
+                  <Upload className="w-4 h-4 text-slate-500" />
+                  <span>Choose Another</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* AI Automated Crop Analyzer Results Card */}
           {selectedFile && (
@@ -342,7 +552,7 @@ export const CropAnalysisFlow: React.FC = () => {
                   <div className="pt-2 flex justify-end">
                     <button
                       onClick={() => setStep(2)}
-                      className="flex items-center gap-2 bg-agri-700 hover:bg-agri-800 text-white font-bold px-6 py-3 rounded-2xl shadow transition"
+                      className="w-full sm:w-auto flex items-center justify-center gap-2 bg-agri-700 hover:bg-agri-800 text-white font-bold px-6 py-3.5 rounded-2xl shadow transition"
                     >
                       Next: Crop Context
                       <ArrowRight className="w-4 h-4" />
@@ -353,17 +563,11 @@ export const CropAnalysisFlow: React.FC = () => {
             </div>
           )}
 
-          {!detectedCropData && (
+          {!detectedCropData && selectedFile && (
             <div className="flex justify-end pt-2">
               <button
-                onClick={() => {
-                  if (!selectedFile) {
-                    setErrorMsg('Please select or capture a crop leaf image to continue.');
-                    return;
-                  }
-                  setStep(2);
-                }}
-                className="flex items-center gap-2 bg-agri-700 hover:bg-agri-800 text-white font-bold px-6 py-3 rounded-2xl shadow transition"
+                onClick={() => setStep(2)}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-agri-700 hover:bg-agri-800 text-white font-bold px-6 py-3.5 rounded-2xl shadow transition"
               >
                 Next: Crop Context
                 <ArrowRight className="w-4 h-4" />
@@ -375,12 +579,12 @@ export const CropAnalysisFlow: React.FC = () => {
 
       {/* STEP 2: Input Context */}
       {step === 2 && (
-        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-5">
+        <div className="bg-white rounded-3xl p-5 sm:p-8 border border-slate-200 shadow-sm space-y-5">
           <div className="flex items-start justify-between">
             <div>
-              <h2 className="text-2xl font-black text-slate-900">Step 2: Crop & Soil Context</h2>
+              <h2 className="text-xl sm:text-2xl font-black text-slate-900">Step 2: Crop & Soil Context</h2>
               <p className="text-xs text-slate-500 mt-1">
-                The AI automatically filled this context from your leaf image. You can adjust any parameter if needed.
+                The AI automatically filled this context from your leaf photo. Adjust parameters if needed.
               </p>
             </div>
             {detectedCropData && (
@@ -404,18 +608,18 @@ export const CropAnalysisFlow: React.FC = () => {
               <select
                 value={crop}
                 onChange={(e) => setCrop(e.target.value)}
-                className="w-full p-2.5 rounded-xl border border-slate-300 font-semibold text-slate-800 focus:border-agri-600 focus:ring-1 focus:ring-agri-600"
+                className="w-full p-3 rounded-xl border border-slate-300 font-semibold text-slate-800 focus:border-agri-600 focus:ring-1 focus:ring-agri-600 text-sm"
               >
                 <option value="Tomato">Tomato (Solanum lycopersicum)</option>
+                <option value="Potato">Potato (Solanum tuberosum)</option>
                 <option value="Chilli">Chilli / Pepper (Capsicum annuum)</option>
                 <option value="Rice">Paddy / Rice (Oryza sativa)</option>
                 <option value="Wheat">Wheat (Triticum aestivum)</option>
                 <option value="Cotton">Cotton (Gossypium hirsutum)</option>
                 <option value="Maize">Maize / Corn (Zea mays)</option>
+                <option value="Onion">Onion (Allium cepa)</option>
+                <option value="Sugarcane">Sugarcane (Saccharum officinarum)</option>
               </select>
-              <p className="text-[11px] text-slate-400 mt-1">
-                AI auto-detected this crop. You can change it here if you wish to override.
-              </p>
             </div>
 
             <div>
@@ -424,7 +628,7 @@ export const CropAnalysisFlow: React.FC = () => {
                 type="text"
                 value={variety}
                 onChange={(e) => setVariety(e.target.value)}
-                className="w-full p-2.5 rounded-xl border border-slate-300 font-medium"
+                className="w-full p-3 rounded-xl border border-slate-300 font-medium text-sm"
               />
             </div>
 
@@ -434,7 +638,7 @@ export const CropAnalysisFlow: React.FC = () => {
                 type="date"
                 value={plantingDate}
                 onChange={(e) => setPlantingDate(e.target.value)}
-                className="w-full p-2.5 rounded-xl border border-slate-300 font-medium"
+                className="w-full p-3 rounded-xl border border-slate-300 font-medium text-sm"
               />
             </div>
 
@@ -443,7 +647,7 @@ export const CropAnalysisFlow: React.FC = () => {
               <select
                 value={stage}
                 onChange={(e) => setStage(e.target.value)}
-                className="w-full p-2.5 rounded-xl border border-slate-300 font-medium"
+                className="w-full p-3 rounded-xl border border-slate-300 font-medium text-sm"
               >
                 <option value="seedling">Seedling</option>
                 <option value="vegetative">Vegetative</option>
@@ -458,7 +662,7 @@ export const CropAnalysisFlow: React.FC = () => {
               <select
                 value={soilType}
                 onChange={(e) => setSoilType(e.target.value)}
-                className="w-full p-2.5 rounded-xl border border-slate-300 font-medium"
+                className="w-full p-3 rounded-xl border border-slate-300 font-medium text-sm"
               >
                 <option value="loam">Loam (Medium capacity)</option>
                 <option value="clay">Clay (High retention)</option>
@@ -474,15 +678,15 @@ export const CropAnalysisFlow: React.FC = () => {
                 step="0.5"
                 value={farmAcres}
                 onChange={(e) => setFarmAcres(parseFloat(e.target.value) || 1.0)}
-                className="w-full p-2.5 rounded-xl border border-slate-300 font-medium"
+                className="w-full p-3 rounded-xl border border-slate-300 font-medium text-sm"
               />
             </div>
           </div>
 
-          <div className="flex justify-between pt-4">
+          <div className="flex items-center justify-between pt-4 gap-3">
             <button
               onClick={() => setStep(1)}
-              className="flex items-center gap-1.5 text-xs text-slate-600 px-4 py-2.5 rounded-xl hover:bg-slate-100"
+              className="flex items-center gap-1.5 text-xs text-slate-600 px-4 py-3 rounded-xl hover:bg-slate-100 font-medium"
             >
               <ArrowLeft className="w-4 h-4" />
               Back
@@ -490,7 +694,7 @@ export const CropAnalysisFlow: React.FC = () => {
 
             <button
               onClick={startAnalysis}
-              className="flex items-center gap-2 bg-agri-700 hover:bg-agri-800 text-white font-bold px-6 py-3 rounded-2xl shadow transition"
+              className="flex items-center gap-2 bg-agri-700 hover:bg-agri-800 text-white font-bold px-6 py-3.5 rounded-2xl shadow transition text-sm"
             >
               Run Multi-Agent Analysis
               <ArrowRight className="w-4 h-4" />
@@ -501,7 +705,7 @@ export const CropAnalysisFlow: React.FC = () => {
 
       {/* STEP 3: Multi-Agent Analysis Progress */}
       {step === 3 && (
-        <div className="bg-white rounded-3xl p-12 border border-slate-200 shadow-sm text-center space-y-4">
+        <div className="bg-white rounded-3xl p-8 sm:p-12 border border-slate-200 shadow-sm text-center space-y-4">
           <div className="w-20 h-20 rounded-full bg-agri-50 text-agri-600 flex items-center justify-center mx-auto border-4 border-agri-100 animate-spin">
             <RefreshCw className="w-10 h-10" />
           </div>
@@ -519,20 +723,124 @@ export const CropAnalysisFlow: React.FC = () => {
       {step === 4 && advisoryResult && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-extrabold text-slate-900">Step 4: Unified Decision & Advisory</h2>
+            <h2 className="text-lg sm:text-xl font-extrabold text-slate-900">Step 4: Unified Decision & Advisory</h2>
             <button
               onClick={() => {
                 setStep(1);
                 setSelectedFile(null);
                 setPreviewUrl(null);
+                setDetectedCropData(null);
               }}
-              className="text-xs font-bold text-agri-700 hover:text-agri-800 bg-agri-50 px-3 py-1.5 rounded-xl border border-agri-200"
+              className="text-xs font-bold text-agri-700 hover:text-agri-800 bg-agri-50 px-3 py-1.5 rounded-xl border border-agri-200 flex items-center gap-1"
             >
+              <RotateCcw className="w-3.5 h-3.5" />
               New Analysis
             </button>
           </div>
 
           <AdvisoryCard advisory={advisoryResult} />
+        </div>
+      )}
+
+      {/* IN-APP LIVE CAMERA MODAL FOR PHONES */}
+      {isLiveCameraOpen && (
+        <div className="fixed inset-0 z-50 bg-black flex flex-col justify-between animate-in fade-in duration-200 safe-bottom-nav">
+          {/* Top Camera Header */}
+          <div className="flex items-center justify-between p-4 z-10 bg-gradient-to-b from-black/80 to-transparent">
+            <span className="text-white text-xs font-bold bg-white/20 px-3 py-1 rounded-full backdrop-blur-md flex items-center gap-1.5">
+              <Camera className="w-3.5 h-3.5 text-emerald-400" />
+              AgriEdge Crop Camera
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleCameraFacingMode}
+                className="p-2.5 rounded-full bg-white/20 hover:bg-white/30 text-white transition active:scale-95"
+                title="Switch camera"
+              >
+                <FlipHorizontal className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
+                onClick={stopLiveCamera}
+                className="p-2.5 rounded-full bg-white/20 hover:bg-white/30 text-white transition active:scale-95"
+                title="Close camera"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Center Viewfinder with Leaf Guide Overlay */}
+          <div className="relative flex-1 flex items-center justify-center overflow-hidden">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover"
+            />
+
+            {/* Bounding box guide to assist farmers in centering leaf */}
+            <div className="absolute inset-8 sm:inset-16 border-2 border-emerald-400/80 rounded-3xl pointer-events-none flex flex-col justify-between p-4 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]">
+              <div className="flex justify-between">
+                <div className="w-6 h-6 border-t-4 border-l-4 border-emerald-400 -mt-1 -ml-1"></div>
+                <div className="w-6 h-6 border-t-4 border-r-4 border-emerald-400 -mt-1 -mr-1"></div>
+              </div>
+              <div className="text-center">
+                <span className="bg-black/60 backdrop-blur text-emerald-300 text-xs font-semibold px-3 py-1 rounded-full">
+                  Align affected leaf inside frame
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <div className="w-6 h-6 border-b-4 border-l-4 border-emerald-400 -mb-1 -ml-1"></div>
+                <div className="w-6 h-6 border-b-4 border-r-4 border-emerald-400 -mb-1 -mr-1"></div>
+              </div>
+            </div>
+
+            {cameraError && (
+              <div className="absolute bottom-6 mx-4 p-3 bg-red-600/90 text-white text-xs rounded-xl text-center">
+                {cameraError}
+              </div>
+            )}
+          </div>
+
+          {/* Bottom Shutter Action Bar */}
+          <div className="p-6 bg-gradient-to-t from-black/90 to-transparent flex items-center justify-around z-10">
+            <button
+              type="button"
+              onClick={() => {
+                stopLiveCamera();
+                galleryInputRef.current?.click();
+              }}
+              className="text-white text-xs font-semibold flex flex-col items-center gap-1 opacity-80 hover:opacity-100"
+            >
+              <ImageIcon className="w-5 h-5" />
+              <span>Gallery</span>
+            </button>
+
+            {/* Big Shutter Button */}
+            <button
+              type="button"
+              disabled={isCapturing}
+              onClick={capturePhotoFromLiveCamera}
+              className="w-20 h-20 rounded-full border-4 border-white p-1 flex items-center justify-center transition active:scale-90"
+              title="Capture Leaf Photo"
+            >
+              <div className="w-full h-full rounded-full bg-emerald-500 hover:bg-emerald-400 flex items-center justify-center shadow-lg">
+                <Camera className="w-7 h-7 text-white" />
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={stopLiveCamera}
+              className="text-white text-xs font-semibold flex flex-col items-center gap-1 opacity-80 hover:opacity-100"
+            >
+              <X className="w-5 h-5" />
+              <span>Cancel</span>
+            </button>
+          </div>
         </div>
       )}
 

@@ -6,10 +6,24 @@
   html {
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     scroll-behavior: smooth;
+    overflow-x: hidden;
+    width: 100%;
+    -webkit-text-size-adjust: 100%;
   }
 
   body {
     @apply bg-slate-50 text-slate-900 antialiased;
+    overflow-x: hidden;
+    width: 100%;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Prevent 300ms tap delay and eliminate default grey tap highlights on mobile */
+  button, a, input, select, textarea {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
@@ -39,4 +53,9 @@
   z-index: 10;
   font-family: inherit;
   border-radius: 1.5rem;
+}
+
+/* Safe area insets for mobile phone screens */
+.safe-bottom-nav {
+  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
 }

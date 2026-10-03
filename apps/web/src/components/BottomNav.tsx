@@ -17,7 +17,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ onOpenVoice }) => {
   }
 
   return (
-    <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-slate-200 px-2 py-1.5 z-40 shadow-lg">
+    <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 px-2 pt-1.5 safe-bottom-nav z-40 shadow-lg">
       <div className="flex items-center justify-around max-w-md mx-auto">
         
         {/* Dashboard */}
