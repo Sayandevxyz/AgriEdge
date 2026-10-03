@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: agriedge-api
+    runtime: python
+    region: oregon
+    plan: free
+    branch: main
+    buildCommand: pip install -r apps/api/requirements.txt
+    startCommand: uvicorn apps.api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: APP_MODE
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: WEATHER_API_KEY
+        sync: false
+      - key: MARKET_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        value: http://localhost:5173,https://agriedge.vercel.app
