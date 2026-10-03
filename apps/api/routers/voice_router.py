@@ -1,14 +1,14 @@
 """
 AgriEdge Multilingual Voice & NLU Router
 Processes voice queries or raw text transcripts, detects intents (IRRIGATION_QUERY,
-DISEASE_QUERY, WEATHER_QUERY, MARKET_QUERY), extracts entities (crop, stage, volume),
+DISEASE_QUERY, WEATHER_QUERY, MARKET_QUERY, FERTILIZER_QUERY), extracts entities (crop, stage, volume),
 and synthesizes natural, realistic spoken audio responses in Hindi, Tamil, and English.
 Integrates live LLM generation for dynamic answers, with comprehensive agronomic fallback.
 """
 
 import os
 import re
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import httpx
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status
 from pydantic import BaseModel
@@ -24,18 +24,25 @@ router = APIRouter(prefix="", tags=["Voice & NLU"])
 class VoiceQueryTextRequest(BaseModel):
     query: str
     language: str = "en"  # en, hi, ta
-    crop: Optional[str] = "Tomato"
+    crop: Optional[str] = None
     planting_date: Optional[str] = "2026-08-20"
     farm_acres: Optional[float] = 2.0
 
 
 CROP_TRANSLATIONS = {
     "Tomato": {"hi": "टमाटर", "ta": "தக்காளி", "en": "Tomato"},
+    "Potato": {"hi": "आलू", "ta": "உருளைக்கிழங்கு", "en": "Potato"},
+    "Onion": {"hi": "प्याज", "ta": "வெங்காயம்", "en": "Onion"},
     "Chilli": {"hi": "मिर्च", "ta": "மிளகாய்", "en": "Chilli"},
     "Rice": {"hi": "धान", "ta": "நெல்", "en": "Paddy Rice"},
     "Wheat": {"hi": "गेहूं", "ta": "கோதுமை", "en": "Wheat"},
     "Cotton": {"hi": "कपास", "ta": "பருத்தி", "en": "Cotton"},
     "Maize": {"hi": "मक्का", "ta": "மக்காச்சோளம்", "en": "Maize"},
+    "Sugarcane": {"hi": "गन्ना", "ta": "கரும்பு", "en": "Sugarcane"},
+    "Mustard": {"hi": "सरसों", "ta": "கடுகு", "en": "Mustard"},
+    "Soybean": {"hi": "सोयाबीन", "ta": "சோயாபீன்", "en": "Soybean"},
+    "Mango": {"hi": "आम", "ta": "மாம்பழம்", "en": "Mango"},
+    "Banana": {"hi": "केला", "ta": "வாழை", "en": "Banana"},
 }
 
 
@@ -62,12 +69,14 @@ def detect_language_from_text(text: str, fallback_lang: str = "en") -> str:
         "kya", "aaj", "paani", "pani", "fasal", "khet", "barish", "barsat",
         "keeda", "tamatar", "gehun", "dhan", "chahiye", "hai", "kaise",
         "karein", "kitna", "de", "dena", "sinchai", "rog", "bhaav", "mandi",
-        "namaste", "bhaiya", "batao", "karna", "sukha", "patti", "khad"
+        "namaste", "bhaiya", "batao", "karna", "sukha", "patti", "khad",
+        "aaloo", "aalu", "pyaz", "mirch", "ganna", "sarson"
     }
     ta_keywords = {
         "thanni", "neer", "inikku", "inru", "payir", "mazhai", "kaathu",
         "thakkali", "nellu", "varuma", "paaikkanuma", "sollunga", "enna",
-        "seivathu", "ilai", "marunthu", "noy", "poochi", "vilai", "vanakkam"
+        "seivathu", "ilai", "marunthu", "noy", "poochi", "vilai", "vanakkam",
+        "urulai", "vengayam", "milagai", "karumbu"
     }
 
     if words.intersection(hi_keywords):
@@ -81,10 +90,16 @@ def detect_language_from_text(text: str, fallback_lang: str = "en") -> str:
 def parse_intent_and_entities(query: str, detected_lang: str) -> dict:
     q = query.lower()
     intent = "GENERAL_AGRICULTURE_QUERY"
-    crop = "Tomato"
+    crop = None
 
-    # Crop extraction (multilingual)
-    if any(k in q for k in ["chilli", "pepper", "mirchi", "मिर्च", "மிளகாய்"]):
+    # Multi-crop extraction: ONLY extract if explicitly mentioned
+    if any(k in q for k in ["tomato", "tamatar", "thakkali", "टमाटर", "தக்காளி"]):
+        crop = "Tomato"
+    elif any(k in q for k in ["potato", "aaloo", "aalu", "urulai", "आलू", "உருளை"]):
+        crop = "Potato"
+    elif any(k in q for k in ["onion", "pyaz", "vengayam", "प्याज", "வெங்காயம்"]):
+        crop = "Onion"
+    elif any(k in q for k in ["chilli", "pepper", "mirch", "mirchi", "मिर्च", "மிளகாய்"]):
         crop = "Chilli"
     elif any(k in q for k in ["paddy", "rice", "dhan", "chawal", "धान", "चावल", "நெல்", "அரிசி"]):
         crop = "Rice"
@@ -94,6 +109,16 @@ def parse_intent_and_entities(query: str, detected_lang: str) -> dict:
         crop = "Cotton"
     elif any(k in q for k in ["maize", "corn", "makka", "मक्का", "மக்காச்சோளம்"]):
         crop = "Maize"
+    elif any(k in q for k in ["sugarcane", "ganna", "karumbu", "गन्ना", "கரும்பு"]):
+        crop = "Sugarcane"
+    elif any(k in q for k in ["mustard", "sarson", "kadugu", "सरसों", "கடுகு"]):
+        crop = "Mustard"
+    elif any(k in q for k in ["soybean", "soya", "सोयाबीन"]):
+        crop = "Soybean"
+    elif any(k in q for k in ["mango", "aam", "mambazham", "आम", "மாம்பழம்"]):
+        crop = "Mango"
+    elif any(k in q for k in ["banana", "kela", "vazhai", "केला", "வாழை"]):
+        crop = "Banana"
 
     # Intent detection (multilingual)
     if any(k in q for k in [
@@ -103,9 +128,15 @@ def parse_intent_and_entities(query: str, detected_lang: str) -> dict:
         intent = "IRRIGATION_QUERY"
     elif any(k in q for k in [
         "disease", "spot", "spots", "yellow", "blight", "fungus", "keeda", "rog", "bimari",
-        "noy", "poochi", "karukal", "நோய்", "பூச்சி", "கருகல்", "कीड़ा", "रोग", "बीमारी", "धब्बा", "झुलसा"
+        "noy", "poochi", "karukal", "dawa", "krumi", "रोग", "बीमारी", "धब्बा", "झुलसा", "कीड़ा",
+        "दवा", "कीटनाशक", "நோய்", "பூச்சி", "கருகல்", "மருந்து"
     ]):
         intent = "DISEASE_QUERY"
+    elif any(k in q for k in [
+        "fertilizer", "khad", "poshan", "dap", "urea", "potash", "uram",
+        "खाद", "उर्वरक", "पोषण", "உரம்"
+    ]):
+        intent = "FERTILIZER_QUERY"
     elif any(k in q for k in [
         "weather", "rain", "forecast", "barish", "barsat", "mausam",
         "mazhai", "vanilai", "வானிலை", "மழை", "मौसम", "बारिश", "वर्षा"
@@ -119,10 +150,10 @@ def parse_intent_and_entities(query: str, detected_lang: str) -> dict:
     return {"intent": intent, "crop": crop, "confidence": 0.94}
 
 
-async def query_llm_voice(query: str, language: str, crop: str, weather_summary: str) -> Optional[str]:
+async def query_llm_voice(query: str, language: str, crop: Optional[str], weather_summary: str) -> Optional[str]:
     """
-    Calls cloud LLM (OpenRouter / OpenAI) to synthesize a direct, spoken, realistic answer
-    in the farmer's native language.
+    Calls cloud LLM (OpenRouter / OpenAI) to analyze the user's specific question
+    and synthesize a direct, spoken, realistic answer in the farmer's native language.
     """
     api_key = settings.OPENROUTER_API_KEY or os.getenv("OPENROUTER_API_KEY") or settings.OPENAI_API_KEY or os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -130,7 +161,9 @@ async def query_llm_voice(query: str, language: str, crop: str, weather_summary:
 
     is_openrouter = "sk-or-" in api_key
     url = "https://openrouter.ai/api/v1/chat/completions" if is_openrouter else "https://api.openai.com/v1/chat/completions"
-    model = "google/gemini-2.0-flash-001" if is_openrouter else "gpt-4o-mini"
+    
+    # Robust model sequence: try gpt-4o-mini first, fallback to llama-3.3-70b
+    candidate_models = ["openai/gpt-4o-mini", "meta-llama/llama-3.3-70b-instruct"] if is_openrouter else ["gpt-4o-mini"]
 
     lang_instructions = {
         "hi": "You must answer completely in natural, authentic, spoken Hindi (हिंदी). Use clear, authentic agricultural vocabulary.",
@@ -139,11 +172,20 @@ async def query_llm_voice(query: str, language: str, crop: str, weather_summary:
     }
     lang_prompt = lang_instructions.get(language, lang_instructions["en"])
 
+    crop_guidance = (
+        f"The user specifically mentioned the crop: {crop}."
+        if crop else
+        "First carefully analyze what crop or topic the user is asking about. Do NOT assume tomato or any specific crop unless the user asked about it."
+    )
+
     system_prompt = (
-        f"You are AgriEdge, an intelligent agricultural expert assistant talking to an Indian smallholder farmer. "
-        f"Answer the farmer's question directly, practically, and warmly in 2 to 3 concise spoken sentences. "
-        f"Do NOT use markdown, bullets, asterisks, or lists, because this text will be read aloud by Text-to-Speech audio. "
-        f"Current crop: {crop}. Local weather: {weather_summary}. "
+        "You are AgriEdge, an intelligent agricultural AI assistant talking directly to an Indian farmer. "
+        "First, carefully analyze what the user is actually asking in their question. "
+        f"{crop_guidance} "
+        "Answer the farmer's question directly, accurately, and practically in 2 to 3 concise spoken sentences. "
+        "Never mention tomato unless the user explicitly asked about tomato. "
+        f"Local weather snapshot: {weather_summary}. "
+        "Do NOT use markdown, asterisks, bullet points, or numbered lists, because this text will be read aloud by Text-to-Speech audio. "
         f"{lang_prompt}"
     )
 
@@ -155,34 +197,35 @@ async def query_llm_voice(query: str, language: str, crop: str, weather_summary:
         headers["HTTP-Referer"] = "https://agriedge.internal"
         headers["X-Title"] = "AgriEdge Voice Assistant"
 
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": query}
-        ],
-        "temperature": 0.3,
-        "max_tokens": 200
-    }
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        for model in candidate_models:
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": query}
+                ],
+                "temperature": 0.3,
+                "max_tokens": 200
+            }
 
-    try:
-        async with httpx.AsyncClient(timeout=6.0) as client:
-            resp = await client.post(url, headers=headers, json=payload)
-            if resp.status_code == 200:
-                data = resp.json()
-                content = data["choices"][0]["message"]["content"].strip()
-                cleaned = content.replace("**", "").replace("*", "").replace("#", "").strip()
-                if cleaned:
-                    return cleaned
-    except Exception as e:
-        print(f"LLM voice query exception: {e}")
+            try:
+                resp = await client.post(url, headers=headers, json=payload)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                    cleaned = content.replace("**", "").replace("*", "").replace("#", "").strip()
+                    if cleaned:
+                        return cleaned
+            except Exception as e:
+                print(f"LLM voice query exception on {model}: {e}")
 
     return None
 
 
 def synthesize_realistic_voice_response(
     intent: str,
-    crop: str,
+    crop: Optional[str],
     lang: str,
     advisory: Optional[Dict[str, Any]],
     weather_curr: Optional[Dict[str, Any]],
@@ -190,54 +233,56 @@ def synthesize_realistic_voice_response(
 ) -> str:
     """
     Domain rule fallback generator for natural, realistic spoken advice
-    tailored to Hindi, Tamil, and English.
+    tailored to Hindi, Tamil, and English. Does NOT default to tomato.
     """
-    crop_info = CROP_TRANSLATIONS.get(crop, {"hi": crop, "ta": crop, "en": crop})
-    crop_name = crop_info.get(lang, crop)
+    crop_name = None
+    if crop:
+        crop_info = CROP_TRANSLATIONS.get(crop, {"hi": crop, "ta": crop, "en": crop})
+        crop_name = crop_info.get(lang, crop)
 
-    if intent == "IRRIGATION_QUERY" and advisory:
-        action = advisory.get("water", {}).get("action", "SKIP")
-        saved_litres = advisory.get("water", {}).get("potential_water_saved_litres", 8400)
-        gross_litres = advisory.get("water", {}).get("estimated_gross_volume_litres", 11200)
+    crop_prefix_hi = f"आपकी {crop_name} की फसल के लिए " if crop_name else "आपकी फसल के लिए "
+    crop_prefix_ta = f"உங்கள் {crop_name} பயிருக்கான " if crop_name else "உங்கள் பயிருக்கான "
+    crop_prefix_en = f"For your {crop_name} crop: " if crop_name else "For your crop: "
 
-        if action == "SKIP":
-            if lang == "hi":
-                return (
-                    f"आपकी {crop_name} की फसल के लिए आज की सलाह: आज सिंचाई रोकें। "
-                    f"मिट्टी में पर्याप्त नमी है और बारिश की संभावना बनी हुई है। "
-                    f"आज सिंचाई न करने से लगभग {saved_litres:,} लीटर पानी और बिजली की बचत होगी।"
-                )
-            elif lang == "ta":
-                return (
-                    f"உங்கள் {crop_name} பயிருக்கான இன்றைய ஆலோசனை: இன்று நீர்ப்பாசனத்தை தவிர்க்கவும். "
-                    f"மண்ணில் போதுமான ஈரப்பதம் உள்ளது மற்றும் மழை பெய்ய வாய்ப்புள்ளது. "
-                    f"இதனால் சுமார் {saved_litres:,} லிட்டர் தண்ணீரும் பம்ப் மின்சாரமும் சேமிக்கப்படும்."
-                )
-            else:
-                return (
-                    f"Recommendation for your {crop_name} crop: Skip irrigation today. "
-                    f"Soil moisture is adequate and upcoming rainfall provides sufficient moisture. "
-                    f"You will save approximately {saved_litres:,} litres of water and pump power."
-                )
+    if intent == "IRRIGATION_QUERY":
+        if lang == "hi":
+            return (
+                f"{crop_prefix_hi}सिंचाई सलाह: मिट्टी की नमी की जांच करें। "
+                f"यदि ऊपरी दो इंच मिट्टी में नमी है तो आज सिंचाई रोकें। "
+                f"ड्रिप सिस्टम को सुबह या शाम के समय चलाना सर्वोत्तम रहता है।"
+            )
+        elif lang == "ta":
+            return (
+                f"{crop_prefix_ta}பாசன ஆலோசனை: மண்ணின் ஈரப்பதத்தை சரிபார்க்கவும். "
+                f"மண்ணில் ஈரப்பதம் போதுமானதாக இருந்தால் இன்று பாசனத்தை தவிர்க்கவும். "
+                f"காலை அல்லது மாலை வேளையில் சொட்டு நீர் பாசனம் செய்வது சிறந்தது."
+            )
         else:
-            if lang == "hi":
-                return (
-                    f"आपकी {crop_name} की फसल के लिए आज की सलाह: आज सिंचाई करें। "
-                    f"वाष्पोत्सर्जन दर अधिक है। फसल को लगभग {gross_litres:,} लीटर पानी की आवश्यकता है। "
-                    f"ड्रिप सिस्टम को सुबह या शाम के समय चलाना सबसे अच्छा रहेगा।"
-                )
-            elif lang == "ta":
-                return (
-                    f"உங்கள் {crop_name} பயிருக்கான இன்றைய ஆலோசனை: இன்று நீர்ப்பாசனம் செய்யவும். "
-                    f"வறண்ட வானிலை காரணமாக பயிருக்கு சுமார் {gross_litres:,} லிட்டர் நீர் தேவைப்படுகிறது. "
-                    f"சொட்டு நீர் பாசனத்தை காலை அல்லது மாலை வேளையில் இயக்கவும்."
-                )
-            else:
-                return (
-                    f"Recommendation for your {crop_name} crop: Irrigate today. "
-                    f"High evapotranspiration requires supplemental moisture. "
-                    f"Apply approximately {gross_litres:,} litres, preferably in early morning or late evening."
-                )
+            return (
+                f"{crop_prefix_en}Irrigation advisory: Check soil moisture before watering. "
+                f"If the top two inches are moist, skip irrigation today to conserve water and energy. "
+                f"Run drip irrigation during early morning or late evening."
+            )
+
+    elif intent == "FERTILIZER_QUERY":
+        if lang == "hi":
+            return (
+                f"{crop_prefix_hi}उर्वरक सलाह: बुवाई या वृद्धि के अनुसार संतुलित एनपीके का प्रयोग करें। "
+                f"खाद हमेशा नम मिट्टी में दें और तेज धूप में छिड़काव से बचें। "
+                f"जैविक खाद या वर्मीकम्पोस्ट मिलाने से मिट्टी की उर्वरता बढ़ती है।"
+            )
+        elif lang == "ta":
+            return (
+                f"{crop_prefix_ta}உர ஆலோசனை: பயிர் வளர்ச்சி நிலைக்கு ஏற்ப சமச்சீர் என்பிகே உரங்களைப் பயன்படுத்தவும். "
+                f"உரங்களை ஈரமான மண்ணில் இடுவது நல்லது. "
+                f"மண்புழு உரம் பயன்படுத்துவது மண்ணின் வளத்தை அதிகரிக்கும்."
+            )
+        else:
+            return (
+                f"{crop_prefix_en}Fertilizer advice: Apply balanced NPK based on the current crop growth stage. "
+                f"Always apply fertilizers to moist soil and avoid mid-day heat. "
+                f"Adding organic compost or vermicompost will improve soil health and nutrient uptake."
+            )
 
     elif intent == "WEATHER_QUERY":
         temp = weather_curr.get("temperature_c", 28.4) if weather_curr else 28.4
@@ -253,7 +298,7 @@ def synthesize_realistic_voice_response(
             c_hi = cond_map.get(condition, condition)
             return (
                 f"आज का मौसम: तापमान {temp}°C है और {c_hi} रहेगा। "
-                f"अगले चौबीस घंटों में लगभग {rain_mm} मिलीमीटर बारिश की संभावना है। "
+                f"अगले 24 घंटों में लगभग {rain_mm} मिलीमीटर बारिश की संभावना है। "
                 f"कीटनाशक छिड़काव या उर्वरक देने से पहले मौसम का ध्यान रखें।"
             )
         elif lang == "ta":
@@ -278,39 +323,53 @@ def synthesize_realistic_voice_response(
     elif intent == "DISEASE_QUERY":
         if lang == "hi":
             return (
-                f"आपकी {crop_name} फसल में रोग रोकथाम सलाह: पत्तियों पर धब्बे या झुलसा दिखने पर "
+                f"{crop_prefix_hi}रोग रोकथाम सलाह: पत्तियों पर धब्बे या झुलसा दिखने पर "
                 f"तुरंत 5 मिलीलीटर नीम तेल प्रति लीटर पानी में मिलाकर छिड़काव करें। "
-                f"खेत में जलभराव न होने दें और अधिक नमी से बचें।"
+                f"खेत में जलभराव न होने दें और हवादार वातावरण बनाए रखें।"
             )
         elif lang == "ta":
             return (
-                f"உங்கள் {crop_name} பயிரின் நோய் மேலாண்மை: இலைகளில் புள்ளிகள் அல்லது கருகல் நோய் தென்பட்டால், "
+                f"{crop_prefix_ta}நோய் மேலாண்மை: இலைகளில் புள்ளிகள் அல்லது கருகல் நோய் தென்பட்டால், "
                 f"ஒரு லிட்டர் தண்ணீருக்கு 5 மி.லி வேப்பெண்ணெய் கலந்து தெளிக்கவும். "
                 f"வயலில் தண்ணீர் தேங்காமல் பார்த்துக் கொள்ளவும்."
             )
         else:
             return (
-                f"Crop health advice for your {crop_name}: If you notice leaf spots or fungal blight, "
+                f"{crop_prefix_en}Pest and disease advice: If you observe leaf spots or fungal symptoms, "
                 f"spray neem oil solution at 5 ml per litre of water. "
                 f"Ensure proper field drainage and avoid overhead wetting of leaves."
+            )
+
+    elif intent == "MARKET_QUERY":
+        if lang == "hi":
+            return (
+                f"मंडी भाव सलाह: स्थानीय कृषि उपज मंडी में आज सामान्य आवक है। "
+                f"फसल की अच्छी ग्रेडिंग और सफाई करके ले जाने से 10 से 15 प्रतिशत बेहतर दाम मिलते हैं।"
+            )
+        elif lang == "ta":
+            return (
+                f"சந்தை விலை ஆலோசனை: உழவர் சந்தை மற்றும் ஒழுங்குமுறை விற்பனைக் கூடத்தில் நல்ல வரவேற்பு உள்ளது. "
+                f"தரம்பிரித்து விற்பனை செய்தால் கூடுதல் லாபம் பெறலாம்."
+            )
+        else:
+            return (
+                f"Market price guidance: Local mandi trading shows steady volume. "
+                f"Grading and cleaning your produce before sale typically fetches 10 to 15 percent higher prices."
             )
 
     else:
         # General Agriculture / Summary Query
         if lang == "hi":
             return (
-                f"नमस्ते किसान मित्र! एग्रीएज के अनुसार आपकी {crop_name} की फसल की स्थिति सामान्य है। "
-                f"मिट्टी की नमी और स्थानीय मौसम पर नजर रखें। किसी भी विशिष्ट सलाह के लिए पूछ सकते हैं।"
+                f"नमस्ते किसान मित्र! कृषि, सिंचाई, खाद, कीट नियंत्रण या मौसम संबंधी किसी भी प्रश्न के लिए एग्रीएज आपकी सहायता के लिए तैयार है।"
             )
         elif lang == "ta":
             return (
-                f"வணக்கம் விவசாயி! அக்ரிஎட்ஜ் வழிகாட்டல்படி உங்கள் {crop_name} பயிர் நிலை சீராக உள்ளது. "
-                f"மண்ணின் ஈரப்பதத்தையும் உள்ளூர் வானிலையையும் தொடர்ந்து கவனியுங்கள்."
+                f"வணக்கம் விவசாயி! விவசாயம், பாசனம், உரம், பூச்சி கட்டுப்பாடு அல்லது வானிலை தொடர்பான எந்த கேள்விக்கும் அக்ரிஎட்ஜ் உதவ தயாராக உள்ளது."
             )
         else:
             return (
-                f"Hello! AgriEdge reports your {crop_name} field condition is on track. "
-                f"Monitor soil moisture and localized weather for optimal yield."
+                f"Hello! AgriEdge is ready to assist you with customized crop guidance, irrigation, fertilizer timing, or weather forecasts."
             )
 
 
@@ -318,7 +377,7 @@ def synthesize_realistic_voice_response(
 async def process_voice_or_audio(
     query_text: Optional[str] = Form(None),
     language: str = Form("en"),
-    crop: str = Form("Tomato"),
+    crop: Optional[str] = Form(None),
     planting_date: str = Form("2026-08-20"),
     farm_acres: float = Form(2.0),
     file: Optional[UploadFile] = File(None),
@@ -326,8 +385,8 @@ async def process_voice_or_audio(
 ):
     """
     Accepts spoken audio transcript or audio file.
-    Detects language (English, Hindi, Tamil), routes intent, and synthesizes
-    realistic, localized spoken response and agronomic advisory.
+    Analyzes user question, detects language (English, Hindi, Tamil),
+    routes intent, and synthesizes accurate, realistic spoken response.
     """
     transcript = query_text
     if file:
@@ -341,9 +400,9 @@ async def process_voice_or_audio(
     # Automatically detect spoken language from script or phonetics
     active_lang = detect_language_from_text(transcript, fallback_lang=language)
 
-    # Parse entities & intent
+    # Parse entities & intent without forcing tomato
     nlu = parse_intent_and_entities(transcript, active_lang)
-    target_crop = nlu["crop"] or crop
+    target_crop = nlu.get("crop") or (crop if crop and crop.lower() != "tomato" else None)
 
     weather_curr = None
     weather_fc = None
@@ -358,7 +417,8 @@ async def process_voice_or_audio(
 
     weather_summary_str = f"{weather_curr.get('temperature_c', 28)}C, {weather_curr.get('condition', 'Partly Cloudy')}, rain: {weather_fc.get('rain_24h_mm', 18)}mm"
 
-    if nlu["intent"] in ["IRRIGATION_QUERY", "GENERAL_AGRICULTURE_QUERY", "DISEASE_QUERY"]:
+    # Optional detailed advisory if a crop is identified
+    if target_crop and nlu["intent"] in ["IRRIGATION_QUERY", "GENERAL_AGRICULTURE_QUERY", "DISEASE_QUERY"]:
         try:
             advisory = await advisory_orchestrator.generate_advisory(
                 crop=target_crop,
@@ -370,7 +430,7 @@ async def process_voice_or_audio(
         except Exception:
             advisory = None
 
-    # Try dynamic LLM synthesis first for realistic custom query answers
+    # Try dynamic LLM synthesis with prioritized, high-availability models
     spoken_response = await query_llm_voice(
         query=transcript,
         language=active_lang,
@@ -378,7 +438,7 @@ async def process_voice_or_audio(
         weather_summary=weather_summary_str
     )
 
-    # Fallback to domain agricultural rules if LLM is unavailable
+    # Fallback to domain agricultural rules without default tomato
     if not spoken_response:
         spoken_response = synthesize_realistic_voice_response(
             intent=nlu["intent"],

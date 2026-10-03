@@ -180,8 +180,6 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
       const formData = new FormData();
       formData.append('query_text', textToSend);
       formData.append('language', activeLang);
-      formData.append('crop', 'Tomato');
-      formData.append('farm_acres', '2.0');
 
       const headers: Record<string, string> = {};
       if (token) {
@@ -336,22 +334,22 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
 
   const quickQuestions = {
     en: [
-      { label: '💧 Water advice today', query: 'Should I water my tomato crop today?' },
-      { label: '🌦 Rain forecast', query: 'Will it rain in next 24 hours?' },
-      { label: '🌱 Leaf spots cure', query: 'How to cure leaf spots and blight in tomato?' },
-      { label: '🌾 Fertilizer timing', query: 'When should I apply fertilizer to tomato?' }
+      { label: '💧 Irrigation advice', query: 'Should I irrigate my field today?' },
+      { label: '🌦 Rain forecast', query: 'Will it rain in the next 24 hours?' },
+      { label: '🌾 Wheat & Rice fertilizer', query: 'What is the best fertilizer timing for wheat and rice?' },
+      { label: '🌱 Leaf spots & blight cure', query: 'How to cure fungal leaf spots and blight?' }
     ],
     hi: [
-      { label: '💧 पानी की सलाह', query: 'क्या आज टमाटर में पानी देना चाहिए?' },
+      { label: '💧 सिंचाई सलाह', query: 'क्या आज खेत में पानी देना चाहिए?' },
       { label: '🌦 बारिश का अनुमान', query: 'क्या अगले 24 घंटों में बारिश होगी?' },
-      { label: '🌱 पत्तियों पर धब्बे', query: 'टमाटर की पत्तियों पर काले धब्बे का इलाज क्या है?' },
-      { label: '🌾 खाद और पोषण', query: 'टमाटर में खाद डालने का सही समय क्या है?' }
+      { label: '🌾 गेहूं और धान में खाद', query: 'गेहूं और धान में खाद डालने का सही समय क्या है?' },
+      { label: '🌱 पत्तियों के रोग', query: 'फसल की पत्तियों पर पीले धब्बे और झुलसा का क्या इलाज है?' }
     ],
     ta: [
-      { label: '💧 தண்ணீர் பாசன ஆலோசனை', query: 'இன்று தக்காளிக்கு தண்ணீர் பாய்ச்சலாமா?' },
+      { label: '💧 பாசன ஆலோசனை', query: 'இன்று பயிர்களுக்கு தண்ணீர் பாய்ச்சலாமா?' },
       { label: '🌦 மழை முன்னறிவிப்பு', query: 'அடுத்த 24 மணி நேரத்தில் மழை வருமா?' },
-      { label: '🌱 இலை கருகல் நோய்', query: 'தக்காளி இலைகளில் கருகல் நோய்க்கு மருந்து என்ன?' },
-      { label: '🌾 உர மேலாண்மை', query: 'தக்காளிக்கு உரம் எப்போது இட வேண்டும்?' }
+      { label: '🌾 நெல் & கோதுமை உரம்', query: 'நெல் மற்றும் கோதுமைக்கு உரம் எப்போது இட வேண்டும்?' },
+      { label: '🌱 இலை கருகல் நோய்', query: 'பயிர்களில் இலை கருகல் நோய்க்கு சிறந்த மருந்து என்ன?' }
     ]
   };
 
