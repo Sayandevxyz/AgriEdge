@@ -52,8 +52,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets: Network first with cache fallback
-  event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
-  );
+  // Never intercept Vite hashed assets - let browser handle them directly
+  if (event.request.url.includes('/assets/')) {
+    return;
+  }
 });

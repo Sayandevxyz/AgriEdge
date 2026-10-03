@@ -22,8 +22,15 @@
           var key = 'agriedge_reload_ts';
           var last = sessionStorage.getItem(key);
           var now = Date.now();
-          if (!last || now - parseInt(last, 10) > 8000) {
+          if (!last || now - parseInt(last, 10) > 3000) {
             sessionStorage.setItem(key, String(now));
+            if ('serviceWorker' in navigator) {
+              navigator.serviceWorker.getRegistrations().then(function(regs) {
+                for (var i = 0; i < regs.length; i++) {
+                  regs[i].unregister();
+                }
+              });
+            }
             if ('caches' in window) {
               caches.keys().then(function(names) {
                 names.forEach(function(n) { caches.delete(n); });
