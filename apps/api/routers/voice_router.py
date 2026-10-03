@@ -3,13 +3,18 @@ AgriEdge Multilingual Voice & NLU Router
 Processes voice queries or raw text transcripts, detects intents (IRRIGATION_QUERY,
 DISEASE_QUERY, WEATHER_QUERY, MARKET_QUERY), extracts entities (crop, stage, volume),
 and synthesizes natural, realistic spoken audio responses in Hindi, Tamil, and English.
+Integrates live LLM generation for dynamic answers, with comprehensive agronomic fallback.
 """
 
+import os
+import re
 from typing import Optional, Dict, Any
+import httpx
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status
 from pydantic import BaseModel
 from apps.api.models import User
 from apps.api.auth import get_optional_current_user
+from apps.api.config import settings
 from services.advisory.advisory_orchestrator import advisory_orchestrator
 from services.weather.weather_service import weather_service
 
@@ -51,17 +56,18 @@ def detect_language_from_text(text: str, fallback_lang: str = "en") -> str:
 
     # 2. Phonetic / Transliterated Indian language keywords
     t_lower = text.lower()
-    words = set(t_lower.replace('?', ' ').replace('.', ' ').split())
+    words = set(re.findall(r'\b[a-zA-Z]+\b', t_lower))
 
     hi_keywords = {
         "kya", "aaj", "paani", "pani", "fasal", "khet", "barish", "barsat",
         "keeda", "tamatar", "gehun", "dhan", "chahiye", "hai", "kaise",
-        "karein", "kitna", "de", "dena", "sinchai", "rog", "bhaav", "mandi"
+        "karein", "kitna", "de", "dena", "sinchai", "rog", "bhaav", "mandi",
+        "namaste", "bhaiya", "batao", "karna", "sukha", "patti", "khad"
     }
     ta_keywords = {
         "thanni", "neer", "inikku", "inru", "payir", "mazhai", "kaathu",
         "thakkali", "nellu", "varuma", "paaikkanuma", "sollunga", "enna",
-        "seivathu", "ilai", "marunthu", "noy", "poochi", "vilai"
+        "seivathu", "ilai", "marunthu", "noy", "poochi", "vilai", "vanakkam"
     }
 
     if words.intersection(hi_keywords):
@@ -113,6 +119,67 @@ def parse_intent_and_entities(query: str, detected_lang: str) -> dict:
     return {"intent": intent, "crop": crop, "confidence": 0.94}
 
 
+async def query_llm_voice(query: str, language: str, crop: str, weather_summary: str) -> Optional[str]:
+    """
+    Calls cloud LLM (OpenRouter / OpenAI) to synthesize a direct, spoken, realistic answer
+    in the farmer's native language.
+    """
+    api_key = settings.OPENROUTER_API_KEY or os.getenv("OPENROUTER_API_KEY") or settings.OPENAI_API_KEY or os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return None
+
+    is_openrouter = "sk-or-" in api_key
+    url = "https://openrouter.ai/api/v1/chat/completions" if is_openrouter else "https://api.openai.com/v1/chat/completions"
+    model = "google/gemini-2.0-flash-001" if is_openrouter else "gpt-4o-mini"
+
+    lang_instructions = {
+        "hi": "You must answer completely in natural, authentic, spoken Hindi (हिंदी). Use clear, authentic agricultural vocabulary.",
+        "ta": "You must answer completely in natural, authentic, spoken Tamil (தமிழ்). Use clear, authentic agricultural vocabulary.",
+        "en": "You must answer completely in natural, spoken English."
+    }
+    lang_prompt = lang_instructions.get(language, lang_instructions["en"])
+
+    system_prompt = (
+        f"You are AgriEdge, an intelligent agricultural expert assistant talking to an Indian smallholder farmer. "
+        f"Answer the farmer's question directly, practically, and warmly in 2 to 3 concise spoken sentences. "
+        f"Do NOT use markdown, bullets, asterisks, or lists, because this text will be read aloud by Text-to-Speech audio. "
+        f"Current crop: {crop}. Local weather: {weather_summary}. "
+        f"{lang_prompt}"
+    )
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    if is_openrouter:
+        headers["HTTP-Referer"] = "https://agriedge.internal"
+        headers["X-Title"] = "AgriEdge Voice Assistant"
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": query}
+        ],
+        "temperature": 0.3,
+        "max_tokens": 200
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                content = data["choices"][0]["message"]["content"].strip()
+                cleaned = content.replace("**", "").replace("*", "").replace("#", "").strip()
+                if cleaned:
+                    return cleaned
+    except Exception as e:
+        print(f"LLM voice query exception: {e}")
+
+    return None
+
+
 def synthesize_realistic_voice_response(
     intent: str,
     crop: str,
@@ -122,8 +189,8 @@ def synthesize_realistic_voice_response(
     weather_fc: Optional[Dict[str, Any]]
 ) -> str:
     """
-    Synthesizes natural, realistic, culturally appropriate agricultural spoken advice
-    tailored to the target language (Hindi, Tamil, English).
+    Domain rule fallback generator for natural, realistic spoken advice
+    tailored to Hindi, Tamil, and English.
     """
     crop_info = CROP_TRANSLATIONS.get(crop, {"hi": crop, "ta": crop, "en": crop})
     crop_name = crop_info.get(lang, crop)
@@ -185,7 +252,7 @@ def synthesize_realistic_voice_response(
             }
             c_hi = cond_map.get(condition, condition)
             return (
-                f"आज का मौसम: तापमान {temp}°C है और {c_hi}। "
+                f"आज का मौसम: तापमान {temp}°C है और {c_hi} रहेगा। "
                 f"अगले चौबीस घंटों में लगभग {rain_mm} मिलीमीटर बारिश की संभावना है। "
                 f"कीटनाशक छिड़काव या उर्वरक देने से पहले मौसम का ध्यान रखें।"
             )
@@ -266,12 +333,12 @@ async def process_voice_or_audio(
     if file:
         audio_bytes = await file.read()
         if not transcript:
-            transcript = "Should I water my crop today?"
+            transcript = "What is the crop water requirement today?"
 
-    if not transcript:
+    if not transcript or not transcript.strip():
         transcript = "What is the crop water requirement today?"
 
-    # Automatically detect spoken language
+    # Automatically detect spoken language from script or phonetics
     active_lang = detect_language_from_text(transcript, fallback_lang=language)
 
     # Parse entities & intent
@@ -289,6 +356,8 @@ async def process_voice_or_audio(
         weather_curr = {"temperature_c": 28.4, "condition": "Partly Cloudy"}
         weather_fc = {"rain_24h_mm": 18.5}
 
+    weather_summary_str = f"{weather_curr.get('temperature_c', 28)}C, {weather_curr.get('condition', 'Partly Cloudy')}, rain: {weather_fc.get('rain_24h_mm', 18)}mm"
+
     if nlu["intent"] in ["IRRIGATION_QUERY", "GENERAL_AGRICULTURE_QUERY", "DISEASE_QUERY"]:
         try:
             advisory = await advisory_orchestrator.generate_advisory(
@@ -301,14 +370,24 @@ async def process_voice_or_audio(
         except Exception:
             advisory = None
 
-    spoken_response = synthesize_realistic_voice_response(
-        intent=nlu["intent"],
+    # Try dynamic LLM synthesis first for realistic custom query answers
+    spoken_response = await query_llm_voice(
+        query=transcript,
+        language=active_lang,
         crop=target_crop,
-        lang=active_lang,
-        advisory=advisory,
-        weather_curr=weather_curr,
-        weather_fc=weather_fc
+        weather_summary=weather_summary_str
     )
+
+    # Fallback to domain agricultural rules if LLM is unavailable
+    if not spoken_response:
+        spoken_response = synthesize_realistic_voice_response(
+            intent=nlu["intent"],
+            crop=target_crop,
+            lang=active_lang,
+            advisory=advisory,
+            weather_curr=weather_curr,
+            weather_fc=weather_fc
+        )
 
     return {
         "transcript": transcript,
