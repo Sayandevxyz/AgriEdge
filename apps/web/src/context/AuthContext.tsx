@@ -28,9 +28,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem('agriedge_token');
         localStorage.removeItem('agriedge_user');
       }
-    } else {
-      // Auto-initialize demo farmer login in development mode for seamless judging experience
-      demoLogin('FARMER').catch(() => {});
     }
     setIsLoading(false);
   }, []);

@@ -18,7 +18,7 @@ export const Navbar: React.FC = () => {
   };
 
   return (
-    <nav className="bg-white/95 backdrop-blur border-b border-slate-200 sticky top-[29px] z-40">
+    <nav className="bg-white/95 backdrop-blur border-b border-slate-200 sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
           
@@ -130,7 +130,10 @@ export const Navbar: React.FC = () => {
                   <p className="text-[10px] text-slate-500 uppercase tracking-wider">{user.role}</p>
                 </div>
                 <button
-                  onClick={logout}
+                  onClick={() => {
+                    logout();
+                    navigate('/login');
+                  }}
                   title="Sign Out"
                   className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
                 >

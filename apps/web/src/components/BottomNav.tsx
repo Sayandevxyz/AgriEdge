@@ -2,13 +2,19 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { Home, Camera, Droplets, Mic, History, Settings } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
+import { useAuth } from '../context/AuthContext';
 
 interface BottomNavProps {
   onOpenVoice: () => void;
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({ onOpenVoice }) => {
+  const { user } = useAuth();
   const { t } = useLanguage();
+
+  if (!user || user.role !== 'FARMER') {
+    return null;
+  }
 
   return (
     <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-slate-200 px-2 py-1.5 z-40 shadow-lg">
