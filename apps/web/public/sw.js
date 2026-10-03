@@ -1,17 +1,6 @@
-const CACHE_NAME = 'agriedge-v1';
-const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/logo.svg',
-  '/manifest.json'
-];
+const CACHE_NAME = 'agriedge-v2';
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
-    })
-  );
   self.skipWaiting();
 });
 
@@ -19,11 +8,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
-        keys.map((key) => {
-          if (key !== CACHE_NAME) {
-            return caches.delete(key);
-          }
-        })
+        keys.map((key) => caches.delete(key))
       );
     })
   );
@@ -31,7 +16,7 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Pass through API calls or handle with network-first
+  // Pass through API calls or handle with offline fallback
   if (event.request.url.includes('/api/')) {
     event.respondWith(
       fetch(event.request).catch(() => {
@@ -49,10 +34,26 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets: cache-first with network fallback
+  // HTML / Navigation requests: NETWORK FIRST with offline cache fallback
+  if (event.request.mode === 'navigate' || event.request.destination === 'document') {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => {
+          return caches.match(event.request).then((cached) => cached || caches.match('/index.html'));
+        })
+    );
+    return;
+  }
+
+  // Static assets: Network first with cache fallback
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      return cachedResponse || fetch(event.request);
-    })
+    fetch(event.request).catch(() => caches.match(event.request))
   );
 });

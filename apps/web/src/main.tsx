@@ -17,10 +17,28 @@ if (API_BASE) {
   };
 }
 
-// PWA Service Worker Registration
+// Automatic recovery for stale chunks across deployments
+window.addEventListener('vite:preloadError', () => {
+  window.location.reload();
+});
+
+window.addEventListener('error', (e) => {
+  if (e.message && e.message.includes('Failed to load module script')) {
+    if ('caches' in window) {
+      caches.keys().then((names) => {
+        names.forEach((name) => caches.delete(name));
+      });
+    }
+    window.location.reload();
+  }
+});
+
+// PWA Service Worker Registration & Live Updates
 if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((err) => {
+    navigator.serviceWorker.register('/sw.js').then((reg) => {
+      reg.update();
+    }).catch((err) => {
       console.log('SW registration failed: ', err);
     });
   });
