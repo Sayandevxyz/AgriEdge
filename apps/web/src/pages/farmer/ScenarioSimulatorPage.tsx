@@ -18,7 +18,10 @@ import {
   TrendingDown,
   AlertTriangle,
   CheckCircle2,
-  RefreshCw
+  RefreshCw,
+  MapPin,
+  Radio,
+  CloudRain
 } from 'lucide-react';
 
 export const ScenarioSimulatorPage: React.FC = () => {
@@ -33,10 +36,40 @@ export const ScenarioSimulatorPage: React.FC = () => {
   const [forecastRain, setForecastRain] = useState<number>(18.5);
   const [simulationData, setSimulationData] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [locationLabel, setLocationLabel] = useState<string>('Detecting Live Location...');
+  const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
+  const [isLiveWeatherSynced, setIsLiveWeatherSynced] = useState<boolean>(true);
+
+  useEffect(() => {
+    initSimulator();
+  }, []);
 
   useEffect(() => {
     runSimulation();
-  }, [crop, stage, farmAcres, forecastRain]);
+  }, [crop, stage, farmAcres, forecastRain, coords]);
+
+  const initSimulator = async () => {
+    try {
+      const locRes = await fetch('/api/v1/location/detect');
+      if (locRes.ok) {
+        const loc = await locRes.json();
+        const detected = { lat: loc.latitude, lon: loc.longitude };
+        setCoords(detected);
+        setLocationLabel(loc.formatted_location || `${loc.village}, ${loc.state}`);
+
+        // Fetch live weather for rain & et0 auto-sync
+        const wRes = await fetch(`/api/v1/weather/forecast?lat=${detected.lat}&lon=${detected.lon}`);
+        if (wRes.ok) {
+          const wData = await wRes.json();
+          if (wData.rain_24h_mm !== undefined) {
+            setForecastRain(Number(wData.rain_24h_mm));
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Simulator location init error:', e);
+    }
+  };
 
   const runSimulation = async () => {
     setLoading(true);
@@ -48,15 +81,18 @@ export const ScenarioSimulatorPage: React.FC = () => {
           crop,
           growth_stage: stage,
           farm_acres: farmAcres,
-          et0_mm: 4.8,
           pump_hp: 5.0,
           forecast_rain_24h_mm: forecastRain,
-          forecast_rain_48h_mm: 8.0
+          latitude: coords?.lat,
+          longitude: coords?.lon
         })
       });
       if (res.ok) {
         const data = await res.json();
         setSimulationData(data);
+        if (data.location_name) {
+          setLocationLabel(data.location_name);
+        }
       }
     } catch (err) {
       console.error('Simulation error:', err);
@@ -68,7 +104,7 @@ export const ScenarioSimulatorPage: React.FC = () => {
   const chartData = simulationData?.scenarios?.map((s: any) => ({
     name: s.title.split(' ')[0] + ' ' + (s.title.split(' ')[1] || ''),
     Water_Litres: s.water_litres,
-    Energy_kWh: s.energy_kwh * 1000 // scaled for dual axis view or visualization
+    Energy_kWh: s.energy_kwh * 1000
   })) || [];
 
   return (
@@ -77,18 +113,23 @@ export const ScenarioSimulatorPage: React.FC = () => {
       {/* Header */}
       <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 mb-1">
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">
               What-If Irrigation & Energy Simulator
             </h1>
-            <span className="text-[10px] bg-water-50 text-water-700 font-bold px-2 py-0.5 rounded-full border border-water-200">
-              Scenario Agent
+            <span className="text-[10px] bg-water-50 text-water-700 font-bold px-2 py-0.5 rounded-full border border-water-200 flex items-center gap-1">
+              <Radio className="w-2.5 h-2.5 text-water-600 animate-pulse" />
+              Live Scenario Agent
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-1 max-w-xl">
-            Simulate operational outcomes before pumping. Compare conventional fixed schedules with 
-            weather-aware AI optimization.
-          </p>
+          <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+            <span className="flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+              <MapPin className="w-3 h-3 text-emerald-600" />
+              {locationLabel}
+            </span>
+            <span>•</span>
+            <span>Simulate operational choices before pumping against live rainfall predictions.</span>
+          </div>
         </div>
 
         {/* Quick Parameters */}
@@ -104,9 +145,11 @@ export const ScenarioSimulatorPage: React.FC = () => {
           </div>
           <button
             onClick={runSimulation}
-            className="p-2.5 bg-agri-50 hover:bg-agri-100 text-agri-800 rounded-xl transition border border-agri-200 mt-4"
+            className="p-2.5 bg-agri-50 hover:bg-agri-100 text-agri-800 rounded-xl transition border border-agri-200 mt-4 flex items-center gap-1"
+            title="Recalculate simulation"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <span className="text-xs font-bold hidden sm:inline">Simulate</span>
           </button>
         </div>
       </div>

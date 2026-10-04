@@ -223,6 +223,8 @@ class AdvisoryOrchestrator:
         return {
             "advisory_id": request_id,
             "created_at": time.time(),
+            "location": weather_curr.get("location"),
+            "location_name": weather_curr.get("location_name") or weather_curr.get("location", {}).get("formatted_location", "Local Field"),
             "summary": summary,
             "crop_context": {
                 "crop": crop.capitalize(),

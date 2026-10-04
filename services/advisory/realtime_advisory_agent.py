@@ -81,25 +81,31 @@ class RealTimeAdvisoryAgent:
                 f"{d.get('title')}: {d.get('content')[:120]}..." for d in retrieved_docs[:2]
             )
 
+        location_name = weather_curr.get("location_name") or (
+            f"{weather_curr.get('city', '')}, {weather_curr.get('state', '')}".strip(', ')
+        ) or "Local Farm"
+
         # Build prompt for Real-Time LLM Synthesizer
         system_instruction = (
             "You are the AgriEdge Real-Time Agricultural AI Agent, an expert agronomic scientist and meteorologist. "
             "Your job is to synthesize real-time field telemetry and FAO-56 scientific calculations into clear, practical, "
-            "farmer-first guidance. "
+            "farmer-first guidance tailored to the farmer's real-time geographical location. "
             "You must return ONLY a valid JSON object with the following schema:\n"
             "{\n"
-            '  "summary": "1 to 2 concise sentences explaining today\'s decision, referencing the real-time weather and crop stage accurately",\n'
+            '  "summary": "1 to 2 concise sentences explaining today\'s decision, referencing the real-time location, weather, and crop stage accurately",\n'
             '  "what_to_do": ["Clear action 1", "Clear action 2", "Clear action 3"],\n'
             '  "what_not_to_do": ["Crucial caution 1", "Crucial caution 2", "Crucial caution 3"]\n'
             "}\n"
             "Rules:\n"
             "1. Be strictly factually accurate to the provided numbers. If rain is 0.3mm, do NOT say it meets a 2.5mm demand!\n"
-            "2. Ensure what_to_do and what_not_to_do are actionable for an Indian farmer today.\n"
-            "3. Do not include markdown formatting or backticks outside the JSON."
+            "2. Mention the local area or weather context naturally.\n"
+            "3. Ensure what_to_do and what_not_to_do are actionable for an Indian farmer today.\n"
+            "4. Do not include markdown formatting or backticks outside the JSON."
         )
 
         user_prompt = (
             f"FIELD TELEMETRY & MULTI-AGENT STATE:\n"
+            f"- Location: {location_name}\n"
             f"- Crop: {crop} ({variety}), Growth Stage: {active_stage} (Day {days_elapsed})\n"
             f"- Farm Size: {farm_acres} acres, Soil: {soil_type}, Irrigation Method: {irrigation_method}\n"
             f"- Live Weather: {temp_c}°C, {weather_cond} ({weather_desc}), Humidity: {humidity}%, Wind: {wind_ms} m/s\n"
@@ -165,28 +171,29 @@ class RealTimeAdvisoryAgent:
         duration = round((time.time() - t0) * 1000, 1)
         
         # Real-time tailored summary
+        loc_str = f" in {location_name}" if location_name and "Farm" not in location_name else ""
         if action == "SKIP IRRIGATION":
             if rain_24h >= etc:
                 realtime_summary = (
-                    f"Real-Time Advisory for {crop} ({active_stage.capitalize()} stage, {farm_acres} acres). "
+                    f"Real-Time Advisory for {crop}{loc_str} ({active_stage.capitalize()} stage, {farm_acres} acres). "
                     f"Recommended Action: SKIP IRRIGATION. Forecast rainfall of {rain_24h:.1f} mm covers the daily {etc:.1f} mm crop demand, "
                     f"avoiding {water_saved:,} L of unnecessary groundwater pumping."
                 )
             else:
                 realtime_summary = (
-                    f"Real-Time Advisory for {crop} ({active_stage.capitalize()} stage, {farm_acres} acres). "
+                    f"Real-Time Advisory for {crop}{loc_str} ({active_stage.capitalize()} stage, {farm_acres} acres). "
                     f"Recommended Action: SKIP IRRIGATION. Multi-day effective rainfall and current soil water status fulfill "
                     f"crop evapotranspiration ({etc:.1f} mm/day), protecting root health and conserving energy."
                 )
         elif action == "REDUCE IRRIGATION":
             realtime_summary = (
-                f"Real-Time Advisory for {crop} ({active_stage.capitalize()} stage, {farm_acres} acres). "
+                f"Real-Time Advisory for {crop}{loc_str} ({active_stage.capitalize()} stage, {farm_acres} acres). "
                 f"Recommended Action: REDUCE IRRIGATION. With {rain_24h:.1f} mm light rain expected, apply a reduced volume "
                 f"of {gross_vol:,} L ({runtime_hrs} hrs pump runtime) to maintain root moisture balance."
             )
         else:
             realtime_summary = (
-                f"Real-Time Advisory for {crop} ({active_stage.capitalize()} stage, {farm_acres} acres). "
+                f"Real-Time Advisory for {crop}{loc_str} ({active_stage.capitalize()} stage, {farm_acres} acres). "
                 f"Recommended Action: IRRIGATE NOW. High daily evapotranspiration ({etc:.1f} mm/day) under {temp_c}°C weather "
                 f"requires {gross_vol:,} L of {irrigation_method} irrigation to avoid moisture stress."
             )

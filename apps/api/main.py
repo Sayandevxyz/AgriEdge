@@ -24,6 +24,7 @@ from apps.api.routers.feedback_router import router as feedback_router
 from apps.api.routers.fpo_router import router as fpo_router
 from apps.api.routers.admin_router import router as admin_router
 from apps.api.routers.health_router import router as health_router
+from apps.api.routers.location_router import router as location_router
 
 
 @asynccontextmanager
@@ -82,16 +83,24 @@ async def lifespan(app: FastAPI):
             db.add(admin_user)
             db.commit()
 
+            # Detect real-time location dynamically
+            live_loc = await location_service.detect_ip_location()
+            v_name = live_loc.get("village", "Chennai")
+            d_name = live_loc.get("district", "Chennai")
+            s_name = live_loc.get("state", "Tamil Nadu")
+            lat_val = live_loc.get("latitude", 13.0895)
+            lon_val = live_loc.get("longitude", 80.2739)
+
             # Seed Farmer Profile & Farm
             profile = FarmerProfile(
                 user_id=farmer_user.id,
                 fpo_id=fpo.id,
-                village="Channapatna",
-                block="Channapatna",
-                district="Ramanagara",
-                state="Karnataka",
-                latitude=12.651,
-                longitude=77.202
+                village=v_name,
+                block=v_name,
+                district=d_name,
+                state=s_name,
+                latitude=lat_val,
+                longitude=lon_val
             )
             db.add(profile)
             db.commit()
@@ -100,17 +109,17 @@ async def lifespan(app: FastAPI):
             farm = Farm(
                 farmer_id=profile.id,
                 fpo_id=fpo.id,
-                farm_name="Ramesh Green Valley Farm",
+                farm_name=f"Ramesh {v_name} Farm",
                 total_area_acres=2.0,
                 soil_type="loam",
                 irrigation_type="drip",
                 pump_hp=5.0,
                 pump_type="electric",
                 discharge_rate_lps=8.0,
-                village="Channapatna",
-                district="Ramanagara",
-                latitude=12.651,
-                longitude=77.202
+                village=v_name,
+                district=d_name,
+                latitude=lat_val,
+                longitude=lon_val
             )
             db.add(farm)
             db.commit()
@@ -127,7 +136,19 @@ async def lifespan(app: FastAPI):
             )
             db.add(crop)
             db.commit()
-            print("[AgriEdge] Seeded database entities successfully.")
+            print(f"[AgriEdge] Seeded database entities with real-time location: {v_name}, {d_name}.")
+        else:
+            # Upgrade existing legacy farm location if matching old Channapatna default
+            existing_farm = db.query(Farm).first()
+            if existing_farm and (existing_farm.village == "Channapatna" or abs(existing_farm.latitude - 12.651) < 0.01):
+                live_loc = await location_service.detect_ip_location()
+                existing_farm.village = live_loc.get("village", existing_farm.village)
+                existing_farm.district = live_loc.get("district", existing_farm.district)
+                existing_farm.latitude = live_loc.get("latitude", existing_farm.latitude)
+                existing_farm.longitude = live_loc.get("longitude", existing_farm.longitude)
+                existing_farm.farm_name = f"Ramesh {existing_farm.village} Farm"
+                db.commit()
+                print(f"[AgriEdge] Upgraded existing farm to live real-time location: {existing_farm.village}, {existing_farm.district}.")
     except Exception as e:
         print(f"[AgriEdge] Startup seeding note: {e}")
     finally:
@@ -171,6 +192,7 @@ app.include_router(market_router, prefix=API_V1_PREFIX)
 app.include_router(feedback_router, prefix=API_V1_PREFIX)
 app.include_router(fpo_router, prefix=API_V1_PREFIX)
 app.include_router(admin_router, prefix=API_V1_PREFIX)
+app.include_router(location_router, prefix=API_V1_PREFIX)
 
 
 @app.get("/")

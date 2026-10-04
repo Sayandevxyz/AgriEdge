@@ -1,12 +1,16 @@
 """
 AgriEdge Scenario Agent & What-If Simulator
 Simulates farmer management choices versus AI-optimized schedules.
-Compares water volume, pump energy, operational costs, and crop yield risk.
+Compares water volume, pump energy, operational costs, and crop yield risk
+using real-time field weather forecasts and live agro-meteorological metrics.
 """
 
-from typing import Dict, Any, List
+import math
+from typing import Dict, Any, List, Optional
 from services.irrigation.et_engine import calculate_irrigation_requirement
 from services.irrigation.energy_engine import calculate_pump_energy_and_cost
+from services.weather.weather_service import weather_service
+from services.location.location_service import location_service
 
 
 class ScenarioAgent:
@@ -26,7 +30,6 @@ class ScenarioAgent:
         2. AI-Optimized Plan: 'Skip today and leverage incoming rainfall'
         3. Scenario A: 'Wait 2 Days'
         4. Scenario B: 'Reduce Irrigation by 20%'
-        5. Scenario C: 'Heavy Rain 35mm Occurs'
         """
         # Baseline conventional calculation (no rain deduction)
         base_calc = calculate_irrigation_requirement(
@@ -80,7 +83,7 @@ class ScenarioAgent:
             {
                 "id": "ai_optimized",
                 "title": "AgriEdge AI-Optimized Plan",
-                "description": f"Defer/skip today. Expected rainfall ({forecast_rain_24h_mm} mm) fulfills soil moisture demand.",
+                "description": f"Rainfall forecast ({forecast_rain_24h_mm:.1f} mm) is incorporated into soil water balance.",
                 "water_litres": ai_calc["gross_volume_litres"],
                 "energy_kwh": ai_energy["energy_consumed"],
                 "cost_inr": ai_energy["estimated_cost_inr"],
@@ -96,7 +99,7 @@ class ScenarioAgent:
                 "energy_kwh": wait_energy["energy_consumed"],
                 "cost_inr": wait_energy["estimated_cost_inr"],
                 "risk_level": "LOW",
-                "risk_reason": "Minor surface dry-out possible in sandy soils; safe in loam/clay soils.",
+                "risk_reason": "Safe intermediate deferral; leaves buffer for soil moisture retention.",
                 "is_recommended": False
             },
             {
@@ -120,6 +123,8 @@ class ScenarioAgent:
             "crop": crop,
             "farm_acres": farm_acres,
             "forecast_rain_24h_mm": forecast_rain_24h_mm,
+            "forecast_rain_48h_mm": forecast_rain_48h_mm,
+            "et0_mm": et0_mm,
             "comparison": {
                 "conventional_water_litres": base_calc["gross_volume_litres"],
                 "ai_optimized_water_litres": ai_calc["gross_volume_litres"],
@@ -129,6 +134,75 @@ class ScenarioAgent:
             },
             "scenarios": scenarios_list
         }
+
+    @staticmethod
+    async def simulate_realtime_scenarios(
+        crop: str,
+        growth_stage: str,
+        farm_acres: float,
+        pump_hp: float = 5.0,
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None,
+        et0_override: Optional[float] = None,
+        rain_24h_override: Optional[float] = None,
+        rain_48h_override: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Dynamically extracts real-time meteorological metrics for the farm location
+        and simulates live management choices.
+        """
+        lat = latitude
+        lon = longitude
+        location_info = None
+
+        if lat is None or lon is None:
+            ip_loc = await location_service.detect_ip_location()
+            lat = ip_loc["latitude"]
+            lon = ip_loc["longitude"]
+            location_info = ip_loc
+        else:
+            location_info = await location_service.reverse_geocode(lat, lon)
+
+        # Fetch live forecast
+        weather_fc = await weather_service.get_forecast(lat=lat, lon=lon)
+        weather_curr = await weather_service.get_current_weather(lat=lat, lon=lon)
+
+        # Compute dynamic ET0 if not explicitly overridden
+        if et0_override is not None:
+            et0_val = et0_override
+        else:
+            t_curr = weather_curr.get("temperature_c", 28.0)
+            t_min = weather_curr.get("temp_min_c", 22.0)
+            t_max = weather_curr.get("temp_max_c", 32.0)
+            # Hargreaves-Samani formulation
+            delta_t = max(1.0, t_max - t_min)
+            et0_val = round(0.0023 * (t_curr + 17.8) * math.sqrt(delta_t) * 4.2, 2)
+            et0_val = max(2.5, min(7.5, et0_val))
+
+        rain_24h = rain_24h_override if rain_24h_override is not None else float(weather_fc.get("rain_24h_mm", 0.0))
+        rain_48h = rain_48h_override if rain_48h_override is not None else float(weather_fc.get("rain_48h_mm", 0.0))
+
+        sim = ScenarioAgent.simulate_scenarios(
+            crop=crop,
+            growth_stage=growth_stage,
+            farm_acres=farm_acres,
+            et0_mm=et0_val,
+            pump_hp=pump_hp,
+            forecast_rain_24h_mm=rain_24h,
+            forecast_rain_48h_mm=rain_48h
+        )
+
+        sim["is_realtime"] = True
+        sim["location"] = location_info
+        sim["location_name"] = location_info.get("formatted_location")
+        sim["live_weather"] = {
+            "temperature_c": weather_curr.get("temperature_c"),
+            "condition": weather_curr.get("condition"),
+            "humidity_pct": weather_curr.get("humidity_pct"),
+            "wind_speed_ms": weather_curr.get("wind_speed_ms"),
+            "source": weather_curr.get("data_source")
+        }
+        return sim
 
 
 scenario_agent = ScenarioAgent()

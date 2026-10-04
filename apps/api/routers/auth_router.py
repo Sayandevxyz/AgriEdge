@@ -110,12 +110,27 @@ def demo_login(role: str, db: Session = Depends(get_db)):
         db.refresh(user)
 
         if role_normalized == "FARMER":
+            import asyncio
+            from services.location.location_service import location_service
+            try:
+                # detect IP location
+                live_loc = asyncio.run(location_service.detect_ip_location())
+                v_name = live_loc.get("village", "Chennai")
+                d_name = live_loc.get("district", "Chennai")
+                lat_val = live_loc.get("latitude", 13.0895)
+                lon_val = live_loc.get("longitude", 80.2739)
+            except Exception:
+                v_name = "Local Farm"
+                d_name = "Local District"
+                lat_val = 13.0895
+                lon_val = 80.2739
+
             profile = FarmerProfile(
                 user_id=user.id,
-                village="Channapatna",
-                district="Ramanagara",
-                latitude=12.65,
-                longitude=77.20
+                village=v_name,
+                district=d_name,
+                latitude=lat_val,
+                longitude=lon_val
             )
             db.add(profile)
             db.commit()
@@ -123,15 +138,17 @@ def demo_login(role: str, db: Session = Depends(get_db)):
 
             farm = Farm(
                 farmer_id=profile.id,
-                farm_name="Ramesh Green Tomato Acreage",
+                farm_name=f"Ramesh {v_name} Farm",
                 total_area_acres=2.0,
                 soil_type="loam",
                 irrigation_type="drip",
                 pump_hp=5.0,
                 pump_type="electric",
                 discharge_rate_lps=8.0,
-                village="Channapatna",
-                district="Ramanagara"
+                village=v_name,
+                district=d_name,
+                latitude=lat_val,
+                longitude=lon_val
             )
             db.add(farm)
             db.commit()

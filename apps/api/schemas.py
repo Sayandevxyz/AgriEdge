@@ -91,10 +91,12 @@ class ScenarioSimulateRequest(BaseModel):
     crop: str = "Tomato"
     growth_stage: str = "flowering"
     farm_acres: float = 2.0
-    et0_mm: float = 4.8
+    et0_mm: Optional[float] = None
     pump_hp: float = 5.0
-    forecast_rain_24h_mm: float = 18.0
-    forecast_rain_48h_mm: float = 8.0
+    forecast_rain_24h_mm: Optional[float] = None
+    forecast_rain_48h_mm: Optional[float] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 
 # Feedback & Outcome Request

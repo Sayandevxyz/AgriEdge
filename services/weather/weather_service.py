@@ -8,6 +8,7 @@ import os
 import time
 import httpx
 from typing import Dict, Any, Optional
+from services.location.location_service import location_service
 
 # In-memory cache: {cache_key: (timestamp, data)}
 _WEATHER_CACHE: Dict[str, tuple[float, Dict[str, Any]]] = {}
@@ -170,6 +171,8 @@ class WeatherService:
                             "pressure_hpa": raw["main"]["pressure"],
                             "timestamp": time.time(),
                         }
+                        result["location"] = await location_service.reverse_geocode(lat, lon)
+                        result["location_name"] = result["location"].get("formatted_location")
                         _WEATHER_CACHE[cache_key] = (now, result)
                         return result
             except Exception as e:
@@ -178,10 +181,13 @@ class WeatherService:
         # 2. Live Open-Meteo API fallback (No key required, always real-time)
         om_result = await self._fetch_open_meteo_current(lat, lon)
         if om_result:
+            om_result["location"] = await location_service.reverse_geocode(lat, lon)
+            om_result["location_name"] = om_result["location"].get("formatted_location")
             _WEATHER_CACHE[cache_key] = (now, om_result)
             return om_result
 
         # 3. Local development fallback (explicitly badged if offline)
+        geo_fallback = await location_service.reverse_geocode(lat, lon)
         fallback_data = {
             "is_fallback": True,
             "data_source": "Local development fallback (AgriEdge Agro-Met Simulator)",
@@ -198,6 +204,8 @@ class WeatherService:
             "rainfall_last_hour_mm": 0.0,
             "pressure_hpa": 1010.0,
             "timestamp": time.time(),
+            "location": geo_fallback,
+            "location_name": geo_fallback.get("formatted_location")
         }
         _WEATHER_CACHE[cache_key] = (now, fallback_data)
         return fallback_data

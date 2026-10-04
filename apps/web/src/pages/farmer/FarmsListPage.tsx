@@ -38,13 +38,26 @@ export const FarmsListPage: React.FC = () => {
   const [soilType, setSoilType] = useState<string>('loam');
   const [irrigationType, setIrrigationType] = useState<string>('drip');
   const [pumpHp, setPumpHp] = useState<number>(5.0);
-  const [village, setVillage] = useState<string>('Channapatna');
-  const [district, setDistrict] = useState<string>('Ramanagara');
+  const [village, setVillage] = useState<string>('Local Village');
+  const [district, setDistrict] = useState<string>('Local District');
   const [submitting, setSubmitting] = useState<boolean>(false);
 
   useEffect(() => {
     fetchFarms();
+    detectLocationForFarm();
   }, []);
+
+  const detectLocationForFarm = async () => {
+    try {
+      const res = await fetch('/api/v1/location/detect');
+      if (res.ok) {
+        const d = await res.json();
+        if (d.village) setVillage(d.village);
+        if (d.district) setDistrict(d.district);
+        setFarmName(`Cauvery ${d.village || 'Farm'}`);
+      }
+    } catch (_) {}
+  };
 
   const fetchFarms = async () => {
     setLoading(true);
