@@ -100,10 +100,14 @@ export interface AdvisoryPayload {
   execution_metadata: {
     request_id: string;
     total_duration_ms: number;
+    is_realtime?: boolean;
+    agent_model?: string;
     agents_involved: Array<{
       agent_name: string;
       duration_ms: number;
       status: string;
+      model?: string;
+      is_realtime?: boolean;
     }>;
   };
 }

@@ -260,11 +260,19 @@ def calculate_irrigation_requirement(
 
     # Triage decision logic
     # IRRIGATE NOW / IRRIGATE LATER / REDUCE IRRIGATION / SKIP IRRIGATION / CHECK FIELD BEFORE IRRIGATION
-    if forecast_rainfall_24h_mm >= etc_mm_day or total_effective_rain_mm >= etc_mm_day:
+    if forecast_rainfall_24h_mm >= etc_mm_day:
         action = "SKIP IRRIGATION"
         urgency = "low"
         why = (
             f"Forecast rainfall of {forecast_rainfall_24h_mm:.1f} mm within 24 hours meets or exceeds "
+            f"the daily crop evapotranspiration requirement ({etc_mm_day:.1f} mm). "
+            f"Postponing irrigation saves water and prevents root zone waterlogging."
+        )
+    elif total_effective_rain_mm >= etc_mm_day and forecast_rainfall_24h_mm >= 1.5:
+        action = "SKIP IRRIGATION"
+        urgency = "low"
+        why = (
+            f"Cumulative effective rainfall of {total_effective_rain_mm:.1f} mm over 48 hours meets or exceeds "
             f"the daily crop evapotranspiration requirement ({etc_mm_day:.1f} mm). "
             f"Postponing irrigation saves water and prevents root zone waterlogging."
         )

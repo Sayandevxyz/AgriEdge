@@ -15,6 +15,7 @@ from services.weather.weather_service import weather_service
 from services.weather.rainfall_agent import RainfallAgent
 from services.vision.vision_service import vision_agent
 from services.knowledge.rag_service import knowledge_agent
+from services.advisory.realtime_advisory_agent import realtime_advisory_agent
 
 
 class AdvisoryOrchestrator:
@@ -180,13 +181,42 @@ class AdvisoryOrchestrator:
             elif "Powdery" in disease_info["detected"]:
                 treatment_advice = "Spray Wettable Sulfur 80% WP @ 3.0 g/L or Neem Oil (3%) during early morning or late evening."
 
-        # High-level summary
-        summary = (
-            f"Advisory for {crop.capitalize()} ({stage_data['active_stage'].capitalize()} stage, {farm_acres} acres). "
-            f"Recommended irrigation action: {irrigation_calc['action']}. "
-            f"{irrigation_calc['why']} "
-            + (f"Disease detected: {disease_info['detected']}." if disease_info else "")
+        # 9. Real-Time Multi-Agent AI Synthesis
+        t0 = time.time()
+        ai_synthesis = await realtime_advisory_agent.synthesize(
+            crop=crop,
+            stage_data=stage_data,
+            farm_acres=farm_acres,
+            soil_type=soil_type,
+            irrigation_method=irrigation_method,
+            weather_curr=weather_curr,
+            forecast_data=forecast_data,
+            irrigation_calc=irrigation_calc,
+            energy_calc=energy_calc,
+            disease_info=disease_info,
+            retrieved_docs=retrieved_docs,
+            farmer_query=farmer_query,
+            language=language
         )
+        agent_executions.append({
+            "agent_name": "RealTimeAdvisoryAgent",
+            "duration_ms": ai_synthesis.get("duration_ms", 0.0),
+            "status": "SUCCESS",
+            "model": ai_synthesis.get("model", "AgriEdge-AI"),
+            "is_realtime": ai_synthesis.get("is_realtime", False)
+        })
+
+        summary = ai_synthesis.get("summary")
+        what_to_do = ai_synthesis.get("what_to_do", [
+            f"Follow irrigation decision: {irrigation_calc['action']}.",
+            treatment_advice if disease_info else "Inspect crops early morning for early insect or fungal incidence.",
+            "Keep bunds clean to allow uniform drainage during expected rainfall."
+        ])
+        what_not_to_do = ai_synthesis.get("what_not_to_do", [
+            "Do NOT run agricultural pumps during peak noon heat (11:00 AM - 3:00 PM) to avoid high evaporative losses.",
+            "Do NOT apply nitrogen fertilizers immediately prior to heavy rains to prevent leaching.",
+            "Do NOT spray pesticides when high wind (> 15 km/h) or immediate rainfall is forecast."
+        ])
 
         total_duration = round((time.time() - start_time) * 1000, 1)
 
@@ -238,16 +268,8 @@ class AdvisoryOrchestrator:
                 "requires_verification": False,
                 "badge": "USER REPORTED"
             },
-            "what_to_do": [
-                f"Follow irrigation decision: {irrigation_calc['action']}.",
-                treatment_advice if disease_info else "Inspect crops early morning for early insect or fungal incidence.",
-                "Keep bunds clean to allow uniform drainage during expected rainfall."
-            ],
-            "what_not_to_do": [
-                "Do NOT run agricultural pumps during peak noon heat (11:00 AM - 3:00 PM) to avoid high evaporative losses.",
-                "Do NOT apply nitrogen fertilizers immediately prior to heavy rains to prevent leaching.",
-                "Do NOT spray pesticides when high wind (> 15 km/h) or immediate rainfall is forecast."
-            ],
+            "what_to_do": what_to_do,
+            "what_not_to_do": what_not_to_do,
             "weather_context": {
                 "temperature_c": weather_curr["temperature_c"],
                 "humidity_pct": weather_curr["humidity_pct"],
@@ -271,6 +293,8 @@ class AdvisoryOrchestrator:
             "execution_metadata": {
                 "request_id": request_id,
                 "total_duration_ms": total_duration,
+                "is_realtime": ai_synthesis.get("is_realtime", False),
+                "agent_model": ai_synthesis.get("model", "AgriEdge-AI"),
                 "agents_involved": agent_executions
             }
         }

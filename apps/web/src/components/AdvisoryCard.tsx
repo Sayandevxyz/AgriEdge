@@ -90,9 +90,15 @@ export const AdvisoryCard: React.FC<AdvisoryCardProps> = ({ advisory, onFeedback
       {/* Top Banner with Action Badge & Timestamp */}
       <div className="bg-gradient-to-r from-agri-900 via-agri-800 to-agri-950 text-white p-5 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-agri-200">
               {advisory.crop_context.crop} • {advisory.crop_context.active_stage} Stage ({advisory.crop_context.farm_acres} Acres)
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-mono bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 px-2.5 py-0.5 rounded-full shadow-xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              {advisory.execution_metadata?.is_realtime
+                ? `Real-Time Agent (${advisory.execution_metadata?.agent_model ? advisory.execution_metadata.agent_model.split('/')[1] || advisory.execution_metadata.agent_model : 'Live'})`
+                : 'Multi-Agent Ensemble'}
             </span>
           </div>
           <span className="text-[11px] text-slate-300 font-mono">
