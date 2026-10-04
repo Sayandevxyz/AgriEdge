@@ -10,7 +10,8 @@ import {
   RotateCcw,
   Send,
   Trash2,
-  User
+  User,
+  Radio
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
@@ -58,6 +59,8 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
   const silenceTimerRef = useRef<any>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const hasSpokenWelcomeRef = useRef<boolean>(false);
+  const latestSpokenRef = useRef<string>('');
+  const hasAutoSubmittedRef = useRef<boolean>(false);
 
   // Stop recognition helper
   const stopListening = useCallback(() => {
@@ -76,7 +79,9 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
 
   // Sync with app language
   useEffect(() => {
-    setActiveLang(language);
+    if (language) {
+      setActiveLang(language);
+    }
   }, [language]);
 
   // Load voices for realistic TTS
@@ -157,27 +162,33 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
     }
   }, [messages, isOpen, state]);
 
-  // Welcome message initialization when modal opens
+  // Welcome message initialization when modal opens or language changes
   useEffect(() => {
     if (isOpen) {
-      if (messages.length === 0) {
-        const welcomeText = WELCOME_MESSAGES[activeLang] || WELCOME_MESSAGES.en;
-        const initialMsg: ChatMessage = {
-          id: 'welcome-' + Date.now(),
-          sender: 'agriedge',
-          text: welcomeText,
-          timestamp: new Date()
-        };
-        setMessages([initialMsg]);
-
-        // Speak welcome greeting aloud on opening
-        if (!hasSpokenWelcomeRef.current) {
-          hasSpokenWelcomeRef.current = true;
-          // Short delay to allow audio context to activate
-          setTimeout(() => {
-            speakText(welcomeText, activeLang);
-          }, 400);
+      const welcomeText = WELCOME_MESSAGES[activeLang] || WELCOME_MESSAGES.en;
+      
+      setMessages((prev) => {
+        // If there are no questions asked by the farmer yet, show ONLY the welcome message for activeLang!
+        const hasFarmerQuestions = prev.some((m) => m.sender === 'farmer');
+        if (!hasFarmerQuestions) {
+          return [
+            {
+              id: 'welcome-' + activeLang,
+              sender: 'agriedge',
+              text: welcomeText,
+              timestamp: new Date()
+            }
+          ];
         }
+        return prev;
+      });
+
+      // Speak welcome greeting aloud on opening
+      if (!hasSpokenWelcomeRef.current) {
+        hasSpokenWelcomeRef.current = true;
+        setTimeout(() => {
+          speakText(welcomeText, activeLang);
+        }, 350);
       }
     } else {
       // Reset when modal closes
@@ -192,6 +203,8 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
       setErrorMessage('');
       setIsSpeaking(false);
       hasSpokenWelcomeRef.current = false;
+      latestSpokenRef.current = '';
+      hasAutoSubmittedRef.current = false;
     }
 
     return () => {
@@ -204,7 +217,7 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
     };
   }, [isOpen, activeLang, speakText, stopListening]);
 
-  // Switch language and speak new localized greeting
+  // Switch language: Replaces the introduction greeting with ONLY the selected language
   const handleLangSwitch = useCallback((lang: LanguageCode) => {
     setActiveLang(lang);
     setLanguage(lang);
@@ -218,13 +231,25 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
     setErrorMessage('');
 
     const welcomeText = WELCOME_MESSAGES[lang] || WELCOME_MESSAGES.en;
-    const langMsg: ChatMessage = {
-      id: `lang-switch-${Date.now()}`,
+    const newWelcomeMsg: ChatMessage = {
+      id: 'welcome-' + lang,
       sender: 'agriedge',
       text: welcomeText,
       timestamp: new Date()
     };
-    setMessages((prev) => [...prev, langMsg]);
+
+    setMessages((prev) => {
+      // Filter out any previous welcome/introduction greetings
+      const farmerMessages = prev.filter((m) => m.sender === 'farmer');
+      if (farmerMessages.length === 0) {
+        // No questions asked yet: show strictly the chosen language's introduction
+        return [newWelcomeMsg];
+      }
+      // If questions were asked, keep conversation but replace initial welcome
+      const nonWelcome = prev.filter((m) => !m.id.startsWith('welcome-') && !m.id.startsWith('lang-switch-'));
+      return [newWelcomeMsg, ...nonWelcome];
+    });
+
     speakText(welcomeText, lang);
   }, [setLanguage, stopListening, speakText]);
 
@@ -239,6 +264,7 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
           ? 'தயவுசெய்து கேள்வியை பேசவும் அல்லது தட்டச்சு செய்யவும்.'
           : 'Please speak or type a question.'
       );
+      setState('READY');
       return;
     }
 
@@ -317,12 +343,38 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
     }
   }, [activeLang, token, stopListening, speakText, onAdvisoryReceived]);
 
-  // Continuous speech recognition
+  // Automatic voice question submission - NO NEED TO CLICK SEND BUTTON
+  const submitVoiceQueryAutomatically = useCallback((forcedText?: string) => {
+    if (hasAutoSubmittedRef.current) return;
+
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (_) {}
+    }
+
+    const textToSubmit = (forcedText || latestSpokenRef.current || queryInput || '').trim();
+    if (textToSubmit.length > 0) {
+      hasAutoSubmittedRef.current = true;
+      sendVoiceQuery(textToSubmit);
+    } else {
+      setState('READY');
+    }
+  }, [queryInput, sendVoiceQuery]);
+
+  // Continuous speech recognition with automatic transmission
   const startListening = useCallback(() => {
     stopListening();
     setState('LISTENING');
     setErrorMessage('');
     setIsSpeaking(false);
+    latestSpokenRef.current = '';
+    hasAutoSubmittedRef.current = false;
 
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       try {
@@ -352,16 +404,16 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
     recognition.lang =
       activeLang === 'hi' ? 'hi-IN' : activeLang === 'ta' ? 'ta-IN' : 'en-IN';
 
-    let capturedText = '';
-
     recognition.onresult = (event: any) => {
       let finalStr = '';
       let interimStr = '';
+      let hasFinal = false;
 
       for (let i = 0; i < event.results.length; i++) {
         const item = event.results[i];
         if (item.isFinal) {
           finalStr += item[0].transcript + ' ';
+          hasFinal = true;
         } else {
           interimStr += item[0].transcript;
         }
@@ -369,17 +421,27 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
 
       const fullSpoken = (finalStr + interimStr).trim();
       if (fullSpoken) {
-        capturedText = fullSpoken;
+        latestSpokenRef.current = fullSpoken;
         setQueryInput(fullSpoken);
 
-        // Reset silence auto-submit timer (1.8s quiet after speech finishes auto-sends query)
+        // Auto-send trigger:
+        // As soon as user speaks and pauses, automatically submit question to AI!
+        if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+        const timeoutMs = hasFinal ? 900 : 1300;
+
+        silenceTimerRef.current = setTimeout(() => {
+          submitVoiceQueryAutomatically(fullSpoken);
+        }, timeoutMs);
+      }
+    };
+
+    // When the browser detects silence / end of speech
+    recognition.onspeechend = () => {
+      if (latestSpokenRef.current.trim().length > 0) {
         if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
         silenceTimerRef.current = setTimeout(() => {
-          stopListening();
-          if (capturedText.trim().length > 0) {
-            sendVoiceQuery(capturedText);
-          }
-        }, 1800);
+          submitVoiceQueryAutomatically();
+        }, 500);
       }
     };
 
@@ -398,9 +460,10 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
     };
 
     recognition.onend = () => {
-      if (capturedText.trim().length > 0) {
-        sendVoiceQuery(capturedText);
-      } else {
+      // If recognition ends and we haven't submitted yet, automatically send to AI!
+      if (!hasAutoSubmittedRef.current && latestSpokenRef.current.trim().length > 0) {
+        submitVoiceQueryAutomatically();
+      } else if (!hasAutoSubmittedRef.current) {
         setState('READY');
       }
     };
@@ -411,16 +474,7 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
       console.warn('Recognition start error:', e);
       setState('READY');
     }
-  }, [activeLang, stopListening, sendVoiceQuery]);
-
-  const handleManualStopOrSend = useCallback(() => {
-    stopListening();
-    if (queryInput && queryInput.trim().length > 0) {
-      sendVoiceQuery(queryInput);
-    } else {
-      setState('READY');
-    }
-  }, [queryInput, stopListening, sendVoiceQuery]);
+  }, [activeLang, stopListening, submitVoiceQueryAutomatically]);
 
   const clearChatHistory = () => {
     stopListening();
@@ -430,7 +484,7 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
     const welcomeText = WELCOME_MESSAGES[activeLang] || WELCOME_MESSAGES.en;
     setMessages([
       {
-        id: 'welcome-' + Date.now(),
+        id: 'welcome-' + activeLang,
         sender: 'agriedge',
         text: welcomeText,
         timestamp: new Date()
@@ -439,6 +493,8 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
     setState('READY');
     setQueryInput('');
     setErrorMessage('');
+    latestSpokenRef.current = '';
+    hasAutoSubmittedRef.current = false;
   };
 
   const quickQuestions = {
@@ -479,7 +535,7 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
                 {activeLang === 'hi' ? 'एग्रीएज वॉयस चैट' : activeLang === 'ta' ? 'அக்ரிஎட்ஜ் குரல் உரையாடல்' : 'AgriEdge Voice Assistant'}
               </h3>
               <p className="text-[11px] text-slate-500 font-medium">
-                {activeLang === 'hi' ? 'कई प्रश्न पूछें (हिंदी • தமிழ் • English)' : activeLang === 'ta' ? 'தொடர்ந்து பல கேள்விகள் கேட்கலாம்' : 'Ask multiple questions in your language'}
+                {activeLang === 'hi' ? 'आवाज से पूछें — रुकते ही सवाल अपने आप चला जाएगा' : activeLang === 'ta' ? 'பேசியதும் தானாகவே AIக்கு செல்லும்' : 'Voice auto-sends to AI on speech finish'}
               </p>
             </div>
           </div>
@@ -505,7 +561,7 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
           </div>
         </div>
 
-        {/* Language Selection Pills */}
+        {/* Language Selection Pills - Shows ONLY chosen language */}
         <div className="flex items-center justify-center gap-2 my-2.5 shrink-0">
           <button
             type="button"
@@ -542,7 +598,7 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
           </button>
         </div>
 
-        {/* Scrollable Conversation Thread (Supports Multiple Questions) */}
+        {/* Scrollable Conversation Thread */}
         <div className="flex-1 overflow-y-auto max-h-[46vh] sm:max-h-[50vh] pr-1 space-y-3 py-2">
           {messages.map((msg) => {
             const isFarmer = msg.sender === 'farmer';
@@ -622,7 +678,7 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
         {/* Interactive Controls & Input Bar */}
         <div className="pt-2 border-t border-slate-100 shrink-0 space-y-2.5">
           
-          {/* Centered Voice Mic Button */}
+          {/* Centered Voice Mic Button with Auto-Send Trigger */}
           <div className="flex items-center justify-center gap-3">
             <div className="relative">
               {state === 'LISTENING' && (
@@ -635,7 +691,8 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
                 type="button"
                 onClick={() => {
                   if (state === 'LISTENING') {
-                    handleManualStopOrSend();
+                    // Tap to stop and send immediately
+                    submitVoiceQueryAutomatically();
                   } else {
                     startListening();
                   }
@@ -647,7 +704,7 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
                     ? 'bg-amber-500 text-white shadow-amber-500/30'
                     : 'bg-agri-700 hover:bg-agri-800 text-white shadow-agri-700/25'
                 }`}
-                title={state === 'LISTENING' ? 'Tap to stop & submit' : 'Tap to speak your next question'}
+                title={state === 'LISTENING' ? 'Tap to finish & send now' : 'Tap to speak question'}
               >
                 {state === 'LISTENING' ? (
                   <MicOff className="w-6 h-6 animate-pulse" />
@@ -659,7 +716,7 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
 
             <div className="text-left">
               <span
-                className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                className={`text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full inline-flex items-center gap-1 ${
                   state === 'LISTENING'
                     ? 'bg-red-100 text-red-700'
                     : state === 'PROCESSING'
@@ -667,19 +724,24 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
                     : 'bg-agri-100 text-agri-800'
                 }`}
               >
-                {state === 'READY' && (activeLang === 'hi' ? 'बोलने के लिए माइक दबाएं' : activeLang === 'ta' ? 'பேச மைக் அழுத்தவும்' : 'Tap Mic to Speak Next')}
-                {state === 'LISTENING' && (activeLang === 'hi' ? 'सुन रहा है... (रुकने पर भेजेगा)' : activeLang === 'ta' ? 'கேட்கிறது... (நிறுத்தினால் அனுப்பும்)' : 'Listening... (auto-sends on pause)')}
+                {state === 'LISTENING' && <Radio className="w-3 h-3 text-red-600 animate-pulse" />}
+                {state === 'READY' && (activeLang === 'hi' ? 'बोलने के लिए माइक दबाएं' : activeLang === 'ta' ? 'பேச மைக் அழுத்தவும்' : 'Tap Mic to Speak')}
+                {state === 'LISTENING' && (activeLang === 'hi' ? 'सुन रहा है... (रुकते ही अपने आप भेजेगा)' : activeLang === 'ta' ? 'கேட்கிறது... (பேசியதும் தானாகவே அனுப்பும்)' : 'Listening... (Auto-sends when done)')}
                 {state === 'PROCESSING' && (activeLang === 'hi' ? 'AI सोच रहा है...' : activeLang === 'ta' ? 'AI சிந்திக்கிறது...' : 'AI Thinking...')}
                 {state === 'RESPONDING' && (activeLang === 'hi' ? 'एग्रीएज बोल रहा है' : activeLang === 'ta' ? 'அக்ரிஎட்ஜ் பேசுகிறது' : 'Speaking advice')}
                 {state === 'ERROR' && (activeLang === 'hi' ? 'पुनः प्रयास करें' : activeLang === 'ta' ? 'மீண்டும் முயற்சிக்கவும்' : 'Please retry')}
               </span>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                {activeLang === 'hi' ? 'लगातार कई सवाल पूछ सकते हैं' : activeLang === 'ta' ? 'அடுத்தடுத்த பல கேள்விகளை கேட்கலாம்' : 'You can ask multiple questions continuously'}
+                {activeLang === 'hi'
+                  ? 'बोलते ही सवाल अपने आप AI को चला जाएगा — सेंड बटन दबाने की जरूरत नहीं।'
+                  : activeLang === 'ta'
+                  ? 'பேசியதும் கேள்வி தானாகவே AIக்கு செல்லும் — அனுப்பும் பட்டனை அழுத்த தேவையில்லை.'
+                  : 'Question sends automatically when you finish speaking — no send button needed.'}
               </p>
             </div>
           </div>
 
-          {/* Text Input with Send Button */}
+          {/* Text Input with Optional Manual Send */}
           <div className="flex gap-2">
             <input
               type="text"
@@ -693,10 +755,10 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
               }}
               placeholder={
                 activeLang === 'hi'
-                  ? 'अपना अगला प्रश्न बोलें या यहाँ लिखें...'
+                  ? 'अपना प्रश्न बोलें (माइक से) या यहाँ लिखें...'
                   : activeLang === 'ta'
-                  ? 'அடுத்த கேள்வியை பேசவும் அல்லது தட்டச்சு செய்யவும்...'
-                  : 'Speak or type your next question...'
+                  ? 'கேள்வியை பேசவும் (மைக்) அல்லது தட்டச்சு செய்யவும்...'
+                  : 'Speak question (Mic) or type here...'
               }
               className="flex-1 text-xs sm:text-sm px-3.5 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-agri-500 bg-slate-50/50"
             />
@@ -705,6 +767,7 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
               onClick={() => sendVoiceQuery(queryInput)}
               disabled={state === 'PROCESSING' || !queryInput.trim()}
               className="bg-agri-700 hover:bg-agri-800 disabled:opacity-40 text-white px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm"
+              title="Send written query"
             >
               <Send className="w-3.5 h-3.5" />
               <span>{activeLang === 'hi' ? 'पूछें' : activeLang === 'ta' ? 'அனுப்பு' : 'Ask'}</span>
