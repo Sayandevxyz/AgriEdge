@@ -24,8 +24,8 @@ export const Navbar: React.FC = () => {
           
           {/* Logo & Brand Identity */}
           <Link to="/" className="flex items-center gap-3 group">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-agri-600 to-agri-900 p-1.5 flex items-center justify-center shadow-md shadow-agri-900/10 group-hover:scale-105 transition-transform">
-              <img src="/logo.svg" alt="AgriEdge Logo" width="28" height="28" style={{ width: '28px', height: '28px', maxWidth: '28px', maxHeight: '28px', display: 'block' }} className="w-7 h-7 object-contain" />
+            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-md shadow-agri-900/10 group-hover:scale-105 transition-transform flex items-center justify-center bg-white border border-slate-100">
+              <img src="/logo.png" alt="AgriEdge Logo" className="w-full h-full object-cover" />
             </div>
             <div>
               <div className="flex items-center gap-1.5">

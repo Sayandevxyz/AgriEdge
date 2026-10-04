@@ -4,6 +4,11 @@
   "description": "Save Water. Save Energy. Grow Smarter.",
   "icons": [
     {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "192x192 512x512"
+    },
+    {
       "src": "/logo.svg",
       "type": "image/svg+xml",
       "sizes": "192x192 512x512"

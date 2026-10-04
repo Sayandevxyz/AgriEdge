@@ -122,8 +122,8 @@ export const SignupPage: React.FC = () => {
       <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full border border-slate-200 shadow-xl space-y-6">
         {/* Brand Header */}
         <div className="text-center space-y-1">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-agri-700 to-agri-500 p-2 mx-auto flex items-center justify-center shadow-md">
-            <img src="/logo.svg" alt="AgriEdge" width="32" height="32" style={{ width: '32px', height: '32px', maxWidth: '32px', maxHeight: '32px', display: 'block' }} className="w-8 h-8" />
+          <div className="w-16 h-16 rounded-2xl overflow-hidden mx-auto flex items-center justify-center shadow-lg border border-slate-100 bg-white">
+            <img src="/logo.png" alt="AgriEdge" className="w-full h-full object-cover" />
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight pt-2">
             Create Your AgriEdge Account

@@ -349,8 +349,10 @@ export const LandingPage: React.FC = () => {
       {/* FOOTER */}
       <footer className="bg-slate-900 text-slate-400 py-10 border-t border-slate-800 text-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <img src="/logo.svg" alt="AgriEdge" className="w-6 h-6" />
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg overflow-hidden bg-white p-0.5 border border-slate-700 shadow-xs flex items-center justify-center">
+              <img src="/logo.png" alt="AgriEdge" className="w-full h-full object-cover" />
+            </div>
             <span className="text-slate-200 font-bold">AgriEdge</span>
             <span>— Farmer-Owned Intelligence for Water, Energy & Crop Productivity</span>
           </div>
