@@ -13,8 +13,9 @@ import httpx
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status
 from pydantic import BaseModel
 from apps.api.models import User
-from apps.api.auth import get_optional_current_user
+from apps.api.auth import get_current_user, get_optional_current_user
 from apps.api.config import settings
+from apps.api.rate_limiter import rate_limit, MAX_UPLOAD_SIZE_BYTES
 from services.advisory.advisory_orchestrator import advisory_orchestrator
 from services.weather.weather_service import weather_service
 
@@ -373,7 +374,10 @@ def synthesize_realistic_voice_response(
             )
 
 
-@router.post("/voice/transcribe")
+@router.post(
+    "/voice/transcribe",
+    dependencies=[Depends(rate_limit(max_requests=20, window_seconds=60, key_prefix="voice_transcribe"))]
+)
 async def process_voice_or_audio(
     query_text: Optional[str] = Form(None),
     language: str = Form("en"),
@@ -381,16 +385,25 @@ async def process_voice_or_audio(
     planting_date: str = Form("2026-08-20"),
     farm_acres: float = Form(2.0),
     file: Optional[UploadFile] = File(None),
-    current_user: Optional[User] = Depends(get_optional_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Accepts spoken audio transcript or audio file.
     Analyzes user question, detects language (English, Hindi, Tamil),
     routes intent, and synthesizes accurate, realistic spoken response.
+    Requires authenticated session.
     """
     transcript = query_text
     if file:
         audio_bytes = await file.read()
+        if len(audio_bytes) > MAX_UPLOAD_SIZE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail={
+                    "code": "FILE_TOO_LARGE",
+                    "message": "Audio file exceeds maximum allowed size of 10 MB."
+                }
+            )
         if not transcript:
             transcript = "What is the crop water requirement today?"
 

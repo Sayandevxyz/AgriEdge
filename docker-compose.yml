@@ -6,15 +6,15 @@ services:
     container_name: agriedge-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: agriedge
-      POSTGRES_USER: agriedge_user
-      POSTGRES_PASSWORD: agriedge_secure_password_2026
+      POSTGRES_DB: ${POSTGRES_DB:-agriedge}
+      POSTGRES_USER: ${POSTGRES_USER:-agriedge_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U agriedge_user -d agriedge"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agriedge_user} -d ${POSTGRES_DB:-agriedge}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -45,12 +45,12 @@ services:
       redis:
         condition: service_healthy
     environment:
-      APP_MODE: production
-      DATABASE_URL: postgresql://agriedge_user:agriedge_secure_password_2026@postgres:5432/agriedge
-      REDIS_URL: redis://redis:6379/0
-      JWT_SECRET: agriedge_jwt_super_secret_key_change_in_production_987654321
-      JWT_REFRESH_SECRET: agriedge_jwt_refresh_super_secret_key_change_in_production_123456789
-      CORS_ORIGINS: http://localhost:5173,http://localhost:3000,http://localhost
+      APP_MODE: ${APP_MODE:-production}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000,http://localhost}
     ports:
       - "8000:8000"
 

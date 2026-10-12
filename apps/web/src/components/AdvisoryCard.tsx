@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
+import { apiFetch } from '../config/api';
 
 interface AdvisoryCardProps {
   advisory: AdvisoryPayload;
@@ -50,12 +51,9 @@ export const AdvisoryCard: React.FC<AdvisoryCardProps> = ({ advisory, onFeedback
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch('/api/v1/feedback', {
+      const res = await apiFetch('/api/v1/feedback', {
         method: 'POST',
-        headers,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           advisory_id: advisory.advisory_id,
           predicted_action: advisory.water.action,

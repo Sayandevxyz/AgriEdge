@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { apiFetch } from '../config/api';
 
 interface QueuedItem {
   id: string;
@@ -66,12 +67,10 @@ export const OfflineSyncProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const remaining: QueuedItem[] = [];
     for (const item of queue) {
       try {
-        const token = localStorage.getItem('agriedge_token');
-        const res = await fetch(item.endpoint, {
+        const res = await apiFetch(item.endpoint, {
           method: item.method,
           headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify(item.payload)
         });

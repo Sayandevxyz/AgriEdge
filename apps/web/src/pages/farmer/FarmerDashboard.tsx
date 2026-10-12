@@ -5,6 +5,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import { AdvisoryCard } from '../../components/AdvisoryCard';
 import { VoiceQueryModal } from '../../components/VoiceQueryModal';
 import { AdvisoryPayload, Farm } from '../../types';
+import { apiFetch } from '../../config/api';
 import {
   Camera,
   Mic,
@@ -62,6 +63,7 @@ export const FarmerDashboard: React.FC = () => {
   const [geoCoords, setGeoCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [locationLabel, setLocationLabel] = useState<string>('Detecting Live Location...');
   const [locationSource, setLocationSource] = useState<string>('Real-Time Telemetry');
+  const [isLocationFallback, setIsLocationFallback] = useState<boolean>(false);
   const [isLocating, setIsLocating] = useState<boolean>(false);
 
   // Real-time auto-updating state
@@ -121,13 +123,14 @@ export const FarmerDashboard: React.FC = () => {
 
     // A. Fast IP-based real-time detection from backend
     try {
-      const res = await fetch('/api/v1/location/detect');
+      const res = await apiFetch('/api/v1/location/detect');
       if (res.ok) {
         const data = await res.json();
         resolved = { lat: data.latitude, lon: data.longitude };
         setGeoCoords(resolved);
         setLocationLabel(data.formatted_location || `${data.village}, ${data.state}`);
         setLocationSource(data.source || 'IP Telemetry');
+        setIsLocationFallback(Boolean(data.is_fallback));
       }
     } catch (err) {
       console.warn('IP location detection notice:', err);
@@ -144,10 +147,11 @@ export const FarmerDashboard: React.FC = () => {
           setGeoCoords(gpsCoords);
           setLocationSource('Live GPS Hardware');
           try {
-            const revRes = await fetch(`/api/v1/location/reverse-geocode?lat=${gpsCoords.lat}&lon=${gpsCoords.lon}`);
+            const revRes = await apiFetch(`/api/v1/location/reverse-geocode?lat=${gpsCoords.lat}&lon=${gpsCoords.lon}`);
             if (revRes.ok) {
               const rev = await revRes.json();
               setLocationLabel(rev.formatted_location || `${rev.village}, ${rev.state}`);
+              setIsLocationFallback(Boolean(rev.is_fallback));
             }
           } catch (_) {}
           setIsLocating(false);
@@ -166,11 +170,7 @@ export const FarmerDashboard: React.FC = () => {
 
   const loadFarmsAndInitialAdvisory = async (coords: { lat: number; lon: number }) => {
     try {
-      const token = localStorage.getItem('agriedge_token');
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch('/api/v1/farms', { headers });
+      const res = await apiFetch('/api/v1/farms');
       if (res.ok) {
         const data: Farm[] = await res.json();
         setFarms(data);
@@ -218,13 +218,8 @@ export const FarmerDashboard: React.FC = () => {
     else setBackgroundSyncing(true);
 
     try {
-      const token = localStorage.getItem('agriedge_token');
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch('/api/v1/advisory/generate', {
+      const res = await apiFetch('/api/v1/advisory/generate', {
         method: 'POST',
-        headers,
         body: JSON.stringify({
           crop: crop,
           planting_date: plantingDate,
@@ -260,7 +255,7 @@ export const FarmerDashboard: React.FC = () => {
     try {
       const coords = geoCoords || (lat && lon ? { lat, lon } : { lat: 13.0895, lon: 80.2739 });
       const url = `/api/v1/market?crop=${encodeURIComponent(crop)}&lat=${coords.lat}&lon=${coords.lon}`;
-      const res = await fetch(url);
+      const res = await apiFetch(url);
       if (res.ok) {
         const data = await res.json();
         setMarketData(data);
@@ -413,6 +408,12 @@ export const FarmerDashboard: React.FC = () => {
                 {geoCoords ? `${geoCoords.lat}°N, ${geoCoords.lon}°E` : locationSource}
               </span>
             </div>
+
+            {isLocationFallback && (
+              <span className="text-[10px] bg-amber-900/80 text-amber-300 font-mono px-2 py-0.5 rounded-full border border-amber-600/70">
+                Estimated Location
+              </span>
+            )}
 
             <button
               onClick={detectRealtimeLocation}
@@ -601,9 +602,15 @@ export const FarmerDashboard: React.FC = () => {
               <Store className="w-4 h-4 text-emerald-400" />
               Real-Time Market Intelligence Agent
             </h3>
-            <span className="text-[10px] bg-emerald-900/80 text-emerald-300 font-mono px-2 py-0.5 rounded-full border border-emerald-700/60">
-              Live Mandi Data
-            </span>
+            {marketData?.is_realtime ? (
+              <span className="text-[10px] bg-emerald-900/80 text-emerald-300 font-mono px-2 py-0.5 rounded-full border border-emerald-700/60">
+                Live Mandi Data
+              </span>
+            ) : (
+              <span className="text-[10px] bg-amber-900/80 text-amber-300 font-semibold font-mono px-2 py-0.5 rounded-full border border-amber-600/70">
+                Estimated ({marketData?.data_source || 'Benchmark'})
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -702,11 +709,15 @@ export const FarmerDashboard: React.FC = () => {
               Real-Time AI Multi-Agent ({advisory?.execution_metadata?.agent_model ? advisory.execution_metadata.agent_model.split('/')[1] || advisory.execution_metadata.agent_model : 'Live'})
             </span>
 
-            {advisory?.weather_context.data_source && (
+            {advisory?.weather_context.is_fallback ? (
+              <span className="text-[10px] text-amber-800 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-300 font-bold font-mono">
+                Estimated Weather (Fallback)
+              </span>
+            ) : advisory?.weather_context.data_source ? (
               <span className="text-[10px] text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200 font-mono hidden sm:inline">
                 {advisory.weather_context.data_source.replace(" Live API", "")}
               </span>
-            )}
+            ) : null}
           </div>
         </div>
 

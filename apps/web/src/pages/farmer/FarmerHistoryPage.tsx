@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { apiFetch } from '../../config/api';
 import { History, Droplets, Sprout, Calendar, ArrowRight, RefreshCw } from 'lucide-react';
 
 export const FarmerHistoryPage: React.FC = () => {
@@ -21,10 +22,7 @@ export const FarmerHistoryPage: React.FC = () => {
   const fetchHistory = async () => {
     setLoading(true);
     try {
-      const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch('/api/v1/farmer/history', { headers });
+      const res = await apiFetch('/api/v1/farmer/history');
       if (res.ok) {
         const d = await res.json();
         setHistory(d);

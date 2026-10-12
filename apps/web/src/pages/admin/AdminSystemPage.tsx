@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { apiFetch } from '../../config/api';
 import {
   Terminal,
   Activity,
@@ -30,7 +31,7 @@ export const AdminSystemPage: React.FC = () => {
   const fetchSystemData = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/admin/system');
+      const res = await apiFetch('/api/v1/admin/system');
       if (res.ok) {
         const d = await res.json();
         setSystemData(d);
@@ -84,7 +85,13 @@ export const AdminSystemPage: React.FC = () => {
             <span className="text-xs font-bold uppercase">System Status</span>
             <Activity className="w-4 h-4 text-emerald-600" />
           </div>
-          <div className="text-2xl font-black text-emerald-600">
+          <div className={`text-2xl font-black ${
+            health?.status === 'DOWN'
+              ? 'text-rose-600'
+              : health?.status === 'DEGRADED'
+              ? 'text-amber-600'
+              : 'text-emerald-600'
+          }`}>
             {health?.status || 'OPERATIONAL'}
           </div>
           <p className="text-xs text-slate-500 mt-1">Uptime: {health?.uptime_seconds || 420}s</p>
@@ -137,7 +144,13 @@ export const AdminSystemPage: React.FC = () => {
               <div key={k} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs">
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-bold text-slate-800 capitalize">{k.replace('_', ' ')}</span>
-                  <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    val.status?.startsWith('DOWN')
+                      ? 'bg-rose-100 text-rose-800'
+                      : val.status?.startsWith('DEGRADED')
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-emerald-100 text-emerald-800'
+                  }`}>
                     {val.status?.split(' ')[0] || 'HEALTHY'}
                   </span>
                 </div>

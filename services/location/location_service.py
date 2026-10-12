@@ -57,7 +57,8 @@ class LocationService:
                         "country": country,
                         "formatted_location": f"{label}, {state}".strip(", ") if state and state not in label else label,
                         "source": "BigDataCloud Live Geocoder",
-                        "is_realtime": True
+                        "is_realtime": True,
+                        "is_fallback": False
                     }
                     _GEO_CACHE[cache_key] = (now, result)
                     return result
@@ -74,7 +75,8 @@ class LocationService:
             "country": "India",
             "formatted_location": f"{round(lat, 2)}°N, {round(lon, 2)}°E",
             "source": "GPS Telemetry",
-            "is_realtime": True
+            "is_realtime": True,
+            "is_fallback": True
         }
         _GEO_CACHE[cache_key] = (now, result)
         return result
@@ -112,7 +114,8 @@ class LocationService:
                             "country": country,
                             "formatted_location": f"{city}, {region}",
                             "source": "Real-Time IP Geolocation",
-                            "is_realtime": True
+                            "is_realtime": True,
+                            "is_fallback": False
                         }
                         _GEO_CACHE[cache_key] = (now, result)
                         return result
@@ -129,7 +132,8 @@ class LocationService:
             "country": "India",
             "formatted_location": "Bengaluru, Karnataka",
             "source": "Regional Default",
-            "is_realtime": False
+            "is_realtime": False,
+            "is_fallback": True
         }
 
 

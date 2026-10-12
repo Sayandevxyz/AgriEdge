@@ -124,6 +124,64 @@ def create_farm(req: FarmCreateRequest, current_user: User = Depends(get_current
     }
 
 
+@router.get("/farms/{farm_id}")
+def get_farm(farm_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    profile = db.query(FarmerProfile).filter(FarmerProfile.user_id == current_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Farmer profile not found")
+    farm = db.query(Farm).filter(Farm.id == farm_id, Farm.farmer_id == profile.id).first()
+    if not farm:
+        raise HTTPException(status_code=404, detail="Farm not found")
+    active_crop = db.query(Crop).filter(Crop.farm_id == farm.id, Crop.is_active == True).first()
+    return {
+        "id": farm.id,
+        "farm_name": farm.farm_name,
+        "total_area_acres": farm.total_area_acres,
+        "soil_type": farm.soil_type,
+        "irrigation_type": farm.irrigation_type,
+        "pump_hp": farm.pump_hp,
+        "pump_type": farm.pump_type,
+        "discharge_rate_lps": farm.discharge_rate_lps,
+        "village": farm.village,
+        "district": farm.district,
+        "latitude": farm.latitude,
+        "longitude": farm.longitude,
+        "active_crop": active_crop.crop_name if active_crop else "None",
+        "variety": active_crop.variety if active_crop else "Standard",
+        "planting_date": active_crop.planting_date if active_crop else "2026-08-20"
+    }
+
+
+@router.put("/farms/{farm_id}")
+def update_farm(farm_id: int, req: dict, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    profile = db.query(FarmerProfile).filter(FarmerProfile.user_id == current_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Farmer profile not found")
+    farm = db.query(Farm).filter(Farm.id == farm_id, Farm.farmer_id == profile.id).first()
+    if not farm:
+        raise HTTPException(status_code=404, detail="Farm not found")
+    for key in ["farm_name", "total_area_acres", "soil_type", "irrigation_type", "pump_hp", "pump_type", "discharge_rate_lps", "village", "district", "latitude", "longitude"]:
+        if key in req and req[key] is not None:
+            setattr(farm, key, req[key])
+    db.commit()
+    db.refresh(farm)
+    return {"success": True, "message": f"Farm {farm.id} updated successfully", "farm_id": farm.id}
+
+
+@router.delete("/farms/{farm_id}")
+def delete_farm(farm_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    profile = db.query(FarmerProfile).filter(FarmerProfile.user_id == current_user.id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Farmer profile not found")
+    farm = db.query(Farm).filter(Farm.id == farm_id, Farm.farmer_id == profile.id).first()
+    if not farm:
+        raise HTTPException(status_code=404, detail="Farm not found")
+    db.query(Crop).filter(Crop.farm_id == farm.id).delete()
+    db.delete(farm)
+    db.commit()
+    return {"success": True, "message": f"Farm {farm_id} deleted successfully"}
+
+
 @router.get("/farmer/history")
 def get_advisory_history(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     profile = db.query(FarmerProfile).filter(FarmerProfile.user_id == current_user.id).first()

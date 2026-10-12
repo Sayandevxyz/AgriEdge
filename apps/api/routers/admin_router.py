@@ -9,7 +9,11 @@ from apps.api.models import User
 from apps.api.auth import get_current_user, require_roles
 from services.admin.observability_service import observability_service
 
-router = APIRouter(prefix="/admin", tags=["Admin & System"])
+router = APIRouter(
+    prefix="/admin",
+    tags=["Admin & System"],
+    dependencies=[Depends(require_roles("SYSTEM_ADMIN"))]
+)
 
 
 @router.get("/system")

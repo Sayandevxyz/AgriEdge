@@ -104,7 +104,7 @@ class MarketAgent:
     and strategic post-harvest recommendations.
     """
     def __init__(self):
-        self.api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("MARKET_API_KEY", "")
+        self.api_key = os.getenv("MARKET_API_KEY") or os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY", "")
         self.cold_storage = RealTimeColdStorageProvider()
 
     async def get_market_data(
@@ -236,10 +236,10 @@ class MarketAgent:
             "district": resolved_district,
             "state": resolved_state,
             "location_context": resolved_location_name or f"{resolved_district}, {resolved_state}",
-            "is_live_available": True,
-            "is_realtime": True,
+            "is_live_available": False,
+            "is_realtime": False,
             "timestamp": time.time(),
-            "data_source": "AgriEdge Real-Time APMC Market Engine",
+            "data_source": "Estimated benchmark (not live)",
             "min_price_inr_quintal": min_price,
             "modal_price_inr_quintal": modal_price,
             "max_price_inr_quintal": max_price,

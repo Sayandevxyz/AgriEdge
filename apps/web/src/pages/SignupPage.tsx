@@ -4,18 +4,19 @@ import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import {
   Sprout,
-  Building2,
   Lock,
   Mail,
   User as UserIcon,
   Phone,
   ArrowRight,
   UserCheck,
-  Terminal,
+  Building2,
   Globe,
-  CheckCircle2
+  MapPin,
+  Navigation
 } from 'lucide-react';
 import { UserRole, LanguageCode } from '../types';
+import { apiFetch } from '../config/api';
 
 export const SignupPage: React.FC = () => {
   const { user, login, demoLogin } = useAuth();
@@ -27,8 +28,14 @@ export const SignupPage: React.FC = () => {
   const [phoneNumber, setPhoneNumber] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [confirmPassword, setConfirmPassword] = useState<string>('');
-  const [role, setRole] = useState<'FARMER' | 'FPO_ADMIN'>('FARMER');
   const [selectedLanguage, setSelectedLanguage] = useState<LanguageCode>(language);
+
+  // Dynamic farmer location fields (Item 13)
+  const [village, setVillage] = useState<string>('');
+  const [district, setDistrict] = useState<string>('');
+  const [latitude, setLatitude] = useState<number | undefined>(undefined);
+  const [longitude, setLongitude] = useState<number | undefined>(undefined);
+  const [detectingGps, setDetectingGps] = useState<boolean>(false);
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -45,12 +52,50 @@ export const SignupPage: React.FC = () => {
     }
   }, [user, navigate]);
 
+  const handleDetectGPS = () => {
+    if (!navigator.geolocation) {
+      setErrorMsg('Geolocation is not supported by your browser.');
+      return;
+    }
+    setDetectingGps(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        setLatitude(lat);
+        setLongitude(lon);
+        try {
+          const res = await apiFetch(`/api/v1/location/reverse-geocode?lat=${lat}&lon=${lon}`);
+          if (res.ok) {
+            const loc = await res.json();
+            if (loc.village) setVillage(loc.village);
+            if (loc.district) setDistrict(loc.district);
+          }
+        } catch {
+          // silently continue
+        } finally {
+          setDetectingGps(false);
+        }
+      },
+      () => {
+        setDetectingGps(false);
+        setErrorMsg('Unable to retrieve your GPS location. Please enter manually.');
+      },
+      { timeout: 8000 }
+    );
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
-    if (password.length < 6) {
-      setErrorMsg('Password must be at least 6 characters long.');
+    // Password policy: min 8 chars, at least one letter and one number
+    if (password.length < 8) {
+      setErrorMsg('Password must be at least 8 characters long.');
+      return;
+    }
+    if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+      setErrorMsg('Password must contain at least one letter and one number.');
       return;
     }
 
@@ -61,37 +106,38 @@ export const SignupPage: React.FC = () => {
 
     setSubmitting(true);
     try {
-      const res = await fetch('/api/v1/auth/register', {
+      const res = await apiFetch('/api/v1/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: email.trim(),
+          email: email.trim().toLowerCase(),
           password,
           full_name: fullName.trim(),
           phone_number: phoneNumber.trim() || undefined,
-          role,
-          language_preference: selectedLanguage
+          language_preference: selectedLanguage,
+          village: village.trim() || undefined,
+          district: district.trim() || undefined,
+          latitude,
+          longitude
         })
       });
 
       if (res.ok) {
         const data = await res.json();
         setLanguage(selectedLanguage);
-        login(data.access_token, {
-          id: data.user_id,
-          email: email.trim(),
-          full_name: data.full_name,
-          role: data.role as UserRole,
-          language_preference: data.language_preference || selectedLanguage
-        });
-
-        navigate(
-          data.role === 'FPO_ADMIN'
-            ? '/fpo/dashboard'
-            : data.role === 'SYSTEM_ADMIN'
-            ? '/admin'
-            : '/farmer/dashboard'
+        login(
+          data.access_token,
+          {
+            id: data.user_id,
+            email: email.trim().toLowerCase(),
+            full_name: data.full_name,
+            role: data.role as UserRole,
+            language_preference: data.language_preference || selectedLanguage
+          },
+          data.refresh_token
         );
+
+        navigate('/farmer/dashboard');
       } else {
         const err = await res.json().catch(() => ({}));
         setErrorMsg(
@@ -126,7 +172,7 @@ export const SignupPage: React.FC = () => {
             <img src="/logo.png" alt="AgriEdge" className="w-full h-full object-cover" />
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight pt-2">
-            Create Your AgriEdge Account
+            Create Your Farmer Account
           </h1>
           <p className="text-xs text-slate-500">
             Farmer-Owned Precision Intelligence for Water, Energy & Yield
@@ -139,37 +185,10 @@ export const SignupPage: React.FC = () => {
           </div>
         )}
 
-        {/* Role Selector Tabs */}
-        <div>
-          <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
-            Select Your Account Type
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setRole('FARMER')}
-              className={`flex items-center justify-center gap-2 p-3 rounded-2xl border text-xs font-bold transition ${
-                role === 'FARMER'
-                  ? 'bg-emerald-50 border-emerald-500 text-emerald-950 shadow-2xs'
-                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              <Sprout className={`w-4 h-4 ${role === 'FARMER' ? 'text-emerald-700' : 'text-slate-400'}`} />
-              <span>Smallholder Farmer</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setRole('FPO_ADMIN')}
-              className={`flex items-center justify-center gap-2 p-3 rounded-2xl border text-xs font-bold transition ${
-                role === 'FPO_ADMIN'
-                  ? 'bg-agri-50 border-agri-500 text-agri-950 shadow-2xs'
-                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              <Building2 className={`w-4 h-4 ${role === 'FPO_ADMIN' ? 'text-agri-700' : 'text-slate-400'}`} />
-              <span>FPO / Agronomist</span>
-            </button>
-          </div>
+        {/* Farmer Badge */}
+        <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold">
+          <Sprout className="w-4 h-4 text-emerald-700 shrink-0" />
+          <span>Smallholder Farmer Membership (Free Precision Advisory)</span>
         </div>
 
         {/* Registration Form */}
@@ -206,6 +225,50 @@ export const SignupPage: React.FC = () => {
                 className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-300 font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-agri-500"
               />
             </div>
+          </div>
+
+          {/* Location details (village, district, GPS) */}
+          <div className="space-y-2 pt-1 border-t border-slate-100">
+            <div className="flex items-center justify-between">
+              <label className="font-semibold text-slate-700 flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-agri-600" />
+                Farm Location Details
+              </label>
+              <button
+                type="button"
+                onClick={handleDetectGPS}
+                disabled={detectingGps}
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-agri-700 hover:text-agri-800 bg-agri-50 px-2 py-1 rounded-lg border border-agri-200 transition"
+              >
+                <Navigation className="w-3 h-3" />
+                {detectingGps ? 'Detecting...' : 'Auto-Detect GPS'}
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <input
+                  type="text"
+                  value={village}
+                  onChange={(e) => setVillage(e.target.value)}
+                  placeholder="Village / Town"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-agri-500"
+                />
+              </div>
+              <div>
+                <input
+                  type="text"
+                  value={district}
+                  onChange={(e) => setDistrict(e.target.value)}
+                  placeholder="District"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-agri-500"
+                />
+              </div>
+            </div>
+            {latitude !== undefined && longitude !== undefined && (
+              <p className="text-[10px] text-slate-500">
+                GPS Coordinates: {latitude.toFixed(4)}°N, {longitude.toFixed(4)}°E
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -256,7 +319,7 @@ export const SignupPage: React.FC = () => {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Min. 6 characters"
+                  placeholder="Min. 8 characters (letters + numbers)"
                   className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-300 font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-agri-500"
                 />
               </div>
@@ -285,7 +348,7 @@ export const SignupPage: React.FC = () => {
             disabled={submitting}
             className="w-full flex items-center justify-center gap-2 bg-agri-700 hover:bg-agri-800 text-white font-bold py-3.5 rounded-2xl shadow transition text-sm mt-2"
           >
-            {submitting ? 'Creating Account...' : 'Sign Up & Continue'}
+            {submitting ? 'Creating Account...' : 'Sign Up as Farmer'}
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>

@@ -16,6 +16,7 @@ import {
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { LanguageCode } from '../types';
+import { apiFetch } from '../config/api';
 
 interface VoiceQueryModalProps {
   isOpen: boolean;
@@ -287,14 +288,8 @@ export const VoiceQueryModal: React.FC<VoiceQueryModalProps> = ({
       formData.append('query_text', textToSend);
       formData.append('language', activeLang);
 
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const res = await fetch('/api/v1/voice/transcribe', {
+      const res = await apiFetch('/api/v1/voice/transcribe', {
         method: 'POST',
-        headers,
         body: formData
       });
 

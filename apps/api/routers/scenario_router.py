@@ -5,15 +5,24 @@ Allows farmers and agronomists to simulate choices like 'Wait 2 days',
 Supports live real-time meteorological synchronization.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from apps.api.models import User
+from apps.api.auth import get_current_user
+from apps.api.rate_limiter import rate_limit
 from apps.api.schemas import ScenarioSimulateRequest
 from services.scenario.scenario_service import scenario_agent
 
 router = APIRouter(prefix="", tags=["Scenario Simulation"])
 
 
-@router.post("/scenario/simulate")
-async def simulate_scenario_endpoint(req: ScenarioSimulateRequest):
+@router.post(
+    "/scenario/simulate",
+    dependencies=[Depends(rate_limit(max_requests=20, window_seconds=60, key_prefix="scenario_simulate"))]
+)
+async def simulate_scenario_endpoint(
+    req: ScenarioSimulateRequest,
+    current_user: User = Depends(get_current_user)
+):
     return await scenario_agent.simulate_realtime_scenarios(
         crop=req.crop,
         growth_stage=req.growth_stage,

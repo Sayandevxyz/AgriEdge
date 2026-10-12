@@ -24,6 +24,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/:match*",
+      "destination": "https://agriedge-api.onrender.com/api/:match*"
+    },
+    {
       "source": "/((?!assets/|.*\\..*).*)",
       "destination": "/index.html"
     }

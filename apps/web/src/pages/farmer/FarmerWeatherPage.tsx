@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { apiFetch } from '../../config/api';
 import {
   CloudRain,
   Sun,
@@ -37,7 +38,7 @@ export const FarmerWeatherPage: React.FC = () => {
 
     // Detect real-time location via IP or GPS
     try {
-      const locRes = await fetch('/api/v1/location/detect');
+      const locRes = await apiFetch('/api/v1/location/detect');
       if (locRes.ok) {
         const loc = await locRes.json();
         lat = loc.latitude;
@@ -56,7 +57,7 @@ export const FarmerWeatherPage: React.FC = () => {
           setCoords({ lat: gLat, lon: gLon });
           await fetchWeatherWithCoords(gLat, gLon);
           try {
-            const revRes = await fetch(`/api/v1/location/reverse-geocode?lat=${gLat}&lon=${gLon}`);
+            const revRes = await apiFetch(`/api/v1/location/reverse-geocode?lat=${gLat}&lon=${gLon}`);
             if (revRes.ok) {
               const rev = await revRes.json();
               setLocationLabel(rev.formatted_location || `${rev.village}, ${rev.state}`);
@@ -77,7 +78,7 @@ export const FarmerWeatherPage: React.FC = () => {
     setLoading(true);
     try {
       const url = lat && lon ? `/api/v1/weather/forecast?lat=${lat}&lon=${lon}` : '/api/v1/weather/forecast';
-      const res = await fetch(url);
+      const res = await apiFetch(url);
       if (res.ok) {
         const d = await res.json();
         setWeatherData(d);
@@ -108,6 +109,11 @@ export const FarmerWeatherPage: React.FC = () => {
               <Radio className="w-2.5 h-2.5 text-sky-600 animate-pulse" />
               Live Rainfall Agent
             </span>
+            {weatherData?.is_fallback && (
+              <span className="text-[10px] bg-amber-50 text-amber-800 font-bold px-2 py-0.5 rounded-full border border-amber-300">
+                Estimated (Offline Fallback)
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
             <span className="flex items-center gap-1 font-semibold text-sky-700 bg-sky-50 px-2.5 py-0.5 rounded-full border border-sky-200">

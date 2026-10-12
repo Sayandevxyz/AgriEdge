@@ -10,6 +10,7 @@ from apps.api.config import settings
 from apps.api.database import engine, Base, SessionLocal
 from apps.api.models import User, FPO, FarmerProfile, Farm, Crop
 from apps.api.auth import hash_password
+from services.location.location_service import location_service
 
 # Import Routers
 from apps.api.routers.auth_router import router as auth_router
@@ -83,13 +84,20 @@ async def lifespan(app: FastAPI):
             db.add(admin_user)
             db.commit()
 
-            # Detect real-time location dynamically
-            live_loc = await location_service.detect_ip_location()
-            v_name = live_loc.get("village", "Chennai")
-            d_name = live_loc.get("district", "Chennai")
-            s_name = live_loc.get("state", "Tamil Nadu")
-            lat_val = live_loc.get("latitude", 13.0895)
-            lon_val = live_loc.get("longitude", 80.2739)
+            # Detect real-time location dynamically with offline Chennai fallback
+            try:
+                live_loc = await location_service.detect_ip_location()
+                v_name = live_loc.get("village", "Chennai")
+                d_name = live_loc.get("district", "Chennai")
+                s_name = live_loc.get("state", "Tamil Nadu")
+                lat_val = live_loc.get("latitude", 13.0895)
+                lon_val = live_loc.get("longitude", 80.2739)
+            except Exception:
+                v_name = "Chennai"
+                d_name = "Chennai"
+                s_name = "Tamil Nadu"
+                lat_val = 13.0895
+                lon_val = 80.2739
 
             # Seed Farmer Profile & Farm
             profile = FarmerProfile(
@@ -141,14 +149,17 @@ async def lifespan(app: FastAPI):
             # Upgrade existing legacy farm location if matching old Channapatna default
             existing_farm = db.query(Farm).first()
             if existing_farm and (existing_farm.village == "Channapatna" or abs(existing_farm.latitude - 12.651) < 0.01):
-                live_loc = await location_service.detect_ip_location()
-                existing_farm.village = live_loc.get("village", existing_farm.village)
-                existing_farm.district = live_loc.get("district", existing_farm.district)
-                existing_farm.latitude = live_loc.get("latitude", existing_farm.latitude)
-                existing_farm.longitude = live_loc.get("longitude", existing_farm.longitude)
-                existing_farm.farm_name = f"Ramesh {existing_farm.village} Farm"
-                db.commit()
-                print(f"[AgriEdge] Upgraded existing farm to live real-time location: {existing_farm.village}, {existing_farm.district}.")
+                try:
+                    live_loc = await location_service.detect_ip_location()
+                    existing_farm.village = live_loc.get("village", existing_farm.village)
+                    existing_farm.district = live_loc.get("district", existing_farm.district)
+                    existing_farm.latitude = live_loc.get("latitude", existing_farm.latitude)
+                    existing_farm.longitude = live_loc.get("longitude", existing_farm.longitude)
+                    existing_farm.farm_name = f"Ramesh {existing_farm.village} Farm"
+                    db.commit()
+                    print(f"[AgriEdge] Upgraded existing farm to live real-time location: {existing_farm.village}, {existing_farm.district}.")
+                except Exception as e:
+                    print(f"[AgriEdge] Farm location upgrade skipped: {e}")
     except Exception as e:
         print(f"[AgriEdge] Startup seeding note: {e}")
     finally:
@@ -166,11 +177,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS Configuration (Allows configured origins + any *.vercel.app domain)
+# CORS Configuration (Allows configured origins only)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
-    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

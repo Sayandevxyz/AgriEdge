@@ -5,6 +5,8 @@ import { useLanguage } from '../context/LanguageContext';
 import { Sprout, ShieldCheck, Lock, Mail, ArrowRight, UserCheck, Building2, Terminal } from 'lucide-react';
 import { UserRole } from '../types';
 
+import { apiFetch } from '../config/api';
+
 export const LoginPage: React.FC = () => {
   const { user, login, demoLogin, isLoading } = useAuth();
   const { t } = useLanguage();
@@ -26,21 +28,21 @@ export const LoginPage: React.FC = () => {
     setSubmitting(true);
     setErrorMsg(null);
     try {
-      const res = await fetch('/api/v1/auth/login', {
+      const res = await apiFetch('/api/v1/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password })
       });
 
       if (res.ok) {
         const data = await res.json();
         login(data.access_token, {
           id: data.user_id,
-          email,
+          email: email.trim().toLowerCase(),
           full_name: data.full_name,
           role: data.role,
           language_preference: data.language_preference || 'en'
-        });
+        }, data.refresh_token);
         navigate(data.role === 'FPO_ADMIN' ? '/fpo/dashboard' : (data.role === 'SYSTEM_ADMIN' ? '/admin' : '/farmer/dashboard'));
       } else {
         const err = await res.json().catch(() => ({}));

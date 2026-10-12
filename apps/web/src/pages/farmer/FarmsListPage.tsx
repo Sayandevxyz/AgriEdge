@@ -3,6 +3,7 @@ import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { Farm } from '../../types';
+import { apiFetch } from '../../config/api';
 import {
   Sprout,
   Plus,
@@ -49,7 +50,7 @@ export const FarmsListPage: React.FC = () => {
 
   const detectLocationForFarm = async () => {
     try {
-      const res = await fetch('/api/v1/location/detect');
+      const res = await apiFetch('/api/v1/location/detect');
       if (res.ok) {
         const d = await res.json();
         if (d.village) setVillage(d.village);
@@ -62,10 +63,7 @@ export const FarmsListPage: React.FC = () => {
   const fetchFarms = async () => {
     setLoading(true);
     try {
-      const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch('/api/v1/farms', { headers });
+      const res = await apiFetch('/api/v1/farms');
       if (res.ok) {
         const data = await res.json();
         setFarms(data);
@@ -81,12 +79,8 @@ export const FarmsListPage: React.FC = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch('/api/v1/farms', {
+      const res = await apiFetch('/api/v1/farms', {
         method: 'POST',
-        headers,
         body: JSON.stringify({
           farm_name: farmName,
           total_area_acres: areaAcres,

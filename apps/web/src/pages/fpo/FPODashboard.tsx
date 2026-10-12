@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { DiseaseMap } from '../../components/DiseaseMap';
 import { DiseaseHotspot } from '../../types';
+import { apiFetch } from '../../config/api';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -52,8 +53,8 @@ export const FPODashboard: React.FC = () => {
     setLoading(true);
     try {
       const [dashRes, mapRes] = await Promise.all([
-        fetch('/api/v1/fpo/dashboard'),
-        fetch('/api/v1/fpo/disease-map')
+        apiFetch('/api/v1/fpo/dashboard'),
+        apiFetch('/api/v1/fpo/disease-map')
       ]);
 
       if (dashRes.ok) {

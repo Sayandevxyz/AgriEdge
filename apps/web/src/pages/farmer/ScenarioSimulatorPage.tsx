@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { apiFetch } from '../../config/api';
 import {
   ResponsiveContainer,
   BarChart,
@@ -50,7 +51,7 @@ export const ScenarioSimulatorPage: React.FC = () => {
 
   const initSimulator = async () => {
     try {
-      const locRes = await fetch('/api/v1/location/detect');
+      const locRes = await apiFetch('/api/v1/location/detect');
       if (locRes.ok) {
         const loc = await locRes.json();
         const detected = { lat: loc.latitude, lon: loc.longitude };
@@ -58,7 +59,7 @@ export const ScenarioSimulatorPage: React.FC = () => {
         setLocationLabel(loc.formatted_location || `${loc.village}, ${loc.state}`);
 
         // Fetch live weather for rain & et0 auto-sync
-        const wRes = await fetch(`/api/v1/weather/forecast?lat=${detected.lat}&lon=${detected.lon}`);
+        const wRes = await apiFetch(`/api/v1/weather/forecast?lat=${detected.lat}&lon=${detected.lon}`);
         if (wRes.ok) {
           const wData = await wRes.json();
           if (wData.rain_24h_mm !== undefined) {
@@ -74,7 +75,7 @@ export const ScenarioSimulatorPage: React.FC = () => {
   const runSimulation = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/scenario/simulate', {
+      const res = await apiFetch('/api/v1/scenario/simulate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

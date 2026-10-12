@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, UserRole } from '../types';
+import { apiUrl } from '../config/api';
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
-  login: (token: string, userData: User) => void;
+  login: (token: string, userData: User, refreshToken?: string) => void;
   demoLogin: (role: UserRole) => Promise<void>;
   logout: () => void;
   isLoading: boolean;
@@ -32,17 +33,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(false);
   }, []);
 
-  const login = (jwtToken: string, userData: User) => {
+  const login = (jwtToken: string, userData: User, refreshToken?: string) => {
     setToken(jwtToken);
     setUser(userData);
     localStorage.setItem('agriedge_token', jwtToken);
     localStorage.setItem('agriedge_user', JSON.stringify(userData));
+    if (refreshToken) {
+      localStorage.setItem('agriedge_refresh_token', refreshToken);
+    }
   };
 
   const demoLogin = async (role: UserRole) => {
     setIsLoading(true);
     try {
-      const resp = await fetch(`/api/v1/auth/demo-login/${role}`, {
+      const resp = await fetch(apiUrl(`/api/v1/auth/demo-login/${role}`), {
         method: 'POST',
       });
       if (resp.ok) {
@@ -54,7 +58,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           role: data.role as UserRole,
           language_preference: data.language_preference || 'en',
         };
-        login(data.access_token, userData);
+        login(data.access_token, userData, data.refresh_token);
       }
     } catch (err) {
       console.error('Demo login failed:', err);
@@ -67,6 +71,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     setToken(null);
     localStorage.removeItem('agriedge_token');
+    localStorage.removeItem('agriedge_refresh_token');
     localStorage.removeItem('agriedge_user');
   };
 

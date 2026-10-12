@@ -10,7 +10,11 @@ from apps.api.models import User
 from apps.api.auth import get_current_user, require_roles
 from services.fpo.fpo_service import fpo_service
 
-router = APIRouter(prefix="/fpo", tags=["FPO Intelligence"])
+router = APIRouter(
+    prefix="/fpo",
+    tags=["FPO Intelligence"],
+    dependencies=[Depends(require_roles("FPO_ADMIN", "SYSTEM_ADMIN"))]
+)
 
 
 @router.get("/dashboard")

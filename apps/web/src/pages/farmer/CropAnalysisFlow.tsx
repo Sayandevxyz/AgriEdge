@@ -4,6 +4,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../context/AuthContext';
 import { AdvisoryCard } from '../../components/AdvisoryCard';
 import { AdvisoryPayload } from '../../types';
+import { apiFetch } from '../../config/api';
 import {
   Camera,
   Upload,
@@ -192,7 +193,7 @@ export const CropAnalysisFlow: React.FC = () => {
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await fetch('/api/v1/vision/detect-crop', {
+      const res = await apiFetch('/api/v1/vision/detect-crop', {
         method: 'POST',
         body: formData
       });
@@ -362,12 +363,8 @@ export const CropAnalysisFlow: React.FC = () => {
       formData.append('irrigation_method', 'drip');
       formData.append('pump_hp', String(pumpHp));
 
-      const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch('/api/v1/vision/analyze', {
+      const res = await apiFetch('/api/v1/vision/analyze', {
         method: 'POST',
-        headers,
         body: formData
       });
 

@@ -10,16 +10,19 @@ from sqlalchemy.orm import Session
 from apps.api.database import get_db
 from apps.api.models import User
 from apps.api.auth import get_current_user
+from apps.api.rate_limiter import rate_limit, validate_upload_size, MAX_UPLOAD_SIZE_BYTES
 from services.vision.vision_service import vision_agent
 from services.advisory.advisory_orchestrator import advisory_orchestrator
 
 router = APIRouter(prefix="", tags=["Vision"])
 
-MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
-@router.post("/vision/detect-crop")
+@router.post(
+    "/vision/detect-crop",
+    dependencies=[Depends(rate_limit(max_requests=20, window_seconds=60, key_prefix="vision_detect"))]
+)
 async def detect_crop_endpoint(
     file: UploadFile = File(...)
 ):
@@ -39,9 +42,9 @@ async def detect_crop_endpoint(
         )
 
     image_bytes = await file.read()
-    if len(image_bytes) > MAX_FILE_SIZE_BYTES:
+    if len(image_bytes) > MAX_UPLOAD_SIZE_BYTES:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail={
                 "code": "IMAGE_TOO_LARGE",
                 "message": f"File size exceeds maximum permitted limit of 10 MB."
@@ -62,7 +65,10 @@ async def detect_crop_endpoint(
     }
 
 
-@router.post("/vision/analyze")
+@router.post(
+    "/vision/analyze",
+    dependencies=[Depends(rate_limit(max_requests=20, window_seconds=60, key_prefix="vision_analyze"))]
+)
 async def analyze_crop_image_endpoint(
     file: UploadFile = File(...),
     crop_name: Optional[str] = Form("auto"),
@@ -89,9 +95,9 @@ async def analyze_crop_image_endpoint(
 
     # 2. File size validation
     image_bytes = await file.read()
-    if len(image_bytes) > MAX_FILE_SIZE_BYTES:
+    if len(image_bytes) > MAX_UPLOAD_SIZE_BYTES:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail={
                 "code": "IMAGE_TOO_LARGE",
                 "message": f"File size exceeds maximum permitted limit of 10 MB ({len(image_bytes)/(1024*1024):.1f} MB uploaded)."
