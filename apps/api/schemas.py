@@ -4,7 +4,7 @@ AgriEdge Pydantic Validation & Serialization Schemas
 
 import re
 from typing import List, Optional, Any, Dict
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
 
 
 # Auth Schemas
@@ -125,8 +125,7 @@ class FarmResponse(BaseModel):
     planting_date: Optional[str] = None
     current_stage: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Advisory Generation Request

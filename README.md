@@ -130,12 +130,26 @@ agriedge/
 ### 2. Environment Setup
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/agriedge.git
-cd agriedge
+git clone https://github.com/Sayandevxyz/AgriEdge.git
+cd AgriEdge
 
 # Setup environment file
 cp .env.example .env
 ```
+
+#### Core Environment Variables
+| Variable | Default / Example | Purpose |
+| :--- | :--- | :--- |
+| `APP_MODE` | `development` | `development` enables demo logins and auto-seeding. In `production`, demo logins return 404, demo buttons are hidden, and seeding is disabled. |
+| `JWT_SECRET` | *(auto-generated in dev)* | Secret key for signing access tokens. In `production`, must be explicitly set to a non-example string or server refuses to boot. |
+| `JWT_REFRESH_SECRET` | *(auto-generated in dev)* | Secret key for refresh tokens. Verified on `POST /api/v1/auth/refresh`. |
+| `SEED_PASSWORD` | `agriedge2026` | Custom password for seeded development users. Never uses hardcoded credentials in production. |
+| `TRUSTED_PROXY_COUNT`| `1` | Number of trusted reverse proxies when parsing real client IP from `X-Forwarded-For` for rate limiting. |
+| `ENABLE_DEMO_LOGIN` | `false` | Explicit override to enable demo logins in staging environments. |
+| `REDIS_URL` | `redis://localhost:6379/0` | Cluster-wide upgrade path for distributed sliding window rate limiting. |
+| `VITE_API_URL` | *(empty = relative)* | Optional backend origin for frontend API requests (e.g. `https://agriedge-api.onrender.com`). |
+
+---
 
 ### 3. Backend Setup
 ```bash
@@ -151,13 +165,15 @@ source .venv/bin/activate
 # Install dependencies
 pip install -r apps/api/requirements.txt
 
-# Run automated tests (26 tests)
+# Run automated tests (42 passing tests)
 pytest tests -v
 
 # Start FastAPI backend server (Port 8000)
 uvicorn apps.api.main:app --host 127.0.0.1 --port 8000 --reload
 ```
-*Note: SQLite database is created and auto-seeded with sample farmer and FPO entities automatically on startup.*
+*Note: SQLite database is created and auto-seeded with sample farmer (Ramesh) and FPO entities only when `APP_MODE=development`.*
+
+---
 
 ### 4. Frontend Setup
 In a new terminal window:
@@ -166,7 +182,7 @@ In a new terminal window:
 cd apps/web
 
 # Install frontend dependencies
-npm install
+npm ci
 
 # Start Vite development server (Port 5173)
 npm run dev
@@ -178,33 +194,40 @@ Open your browser at: **`http://localhost:5173`**
 
 ## 🧪 Automated Test Suite
 
-AgriEdge includes 26 deterministic automated tests covering computational models, security, and vision validation:
+AgriEdge includes **42 deterministic automated tests** covering computational models, security, rate limiting, and RBAC:
 
 ```bash
 pytest tests -v
 ```
 
 **Tested Components:**
-- FAO-56 Penman-Monteith reference evapotranspiration ($ET_0$)
-- Stage-specific crop coefficient ($K_c$) lookup
-- USDA SCS effective rainfall calculation ($P_e$)
-- Irrigation triage logic: `SKIP IRRIGATION`, `REDUCE IRRIGATION`, `IRRIGATE NOW`
-- Pump electrical runtime & diesel consumption equations
-- Image quality validation (blur variance, overexposure, low resolution)
-- Local optical chlorosis/necrosis classification
-- Crop phenology progression & manual stage overrides
-- Rainfall hazard analysis (flood risk, dry spell detection)
-- Knowledge RAG prompt injection sanitization & citation verification
-- Scenario comparison metrics
-- Outcome Agent efficacy scoring & dataset curation
-- Password bcrypt hashing and JWT cryptographic signature verification
+- **Rate Limiting & Upload Size:** N+1 rapid POSTs to `/auth/login` return 429; uploads over 10MB to vision endpoints return 413.
+- **Password Strength Policy:** Registration rejects weak passwords (`short1`, `onlyletters`, `12345678`) with HTTP 422.
+- **Token Refresh Lifecycle:** `POST /auth/refresh` validates refresh tokens, rejects access tokens sent as refresh tokens (401), and handles expired tokens.
+- **Role-Based Access Control:** `POST /auth/admin/users` is accessible to `SYSTEM_ADMIN` but returns 403 for `FARMER` and `FPO_ADMIN`.
+- **Production Safety Verification:** Refuses to instantiate `Settings` when `APP_MODE=production` if `JWT_SECRET` is missing or matches example defaults.
+- **Strict Ownership Isolation:** User B cannot read, update, or delete User A's farm (404), advisory (403), or feedback (403).
+- **FAO-56 Penman-Monteith ET0, Kc & USDA Effective Rainfall:** Mathematical validation against benchmark agricultural tables.
+- **Image Quality & Leaf Diagnostics:** Laplacian blur check, brightness checks, and crop species classification.
+- **Knowledge RAG Injection Guardrails:** Sanitization of retrieved prompt injection vectors.
 
 ---
 
-## 🐳 Docker Deployment
+## 🌐 Production & Vercel Deployment
 
-To launch the full production stack using Docker Compose:
+### Frontend Deployment on Vercel
+1. The web client is pre-configured with `vercel.json` for seamless deployment.
+2. In `vercel.json`, backend API requests are proxied via rewrites:
+   ```json
+   {
+     "source": "/api/:match*",
+     "destination": "https://agriedge-api.onrender.com/api/:match*"
+   }
+   ```
+   > **Important Deployment Step:**  
+   > Before deploying to Vercel, replace `https://agriedge-api.onrender.com` in `vercel.json` with your active backend production URL, or supply `VITE_API_URL` as an environment variable in the Vercel Project Dashboard.
 
+### Docker Production Deployment
 ```bash
 docker compose up -d --build
 ```
@@ -225,3 +248,4 @@ docker compose up -d --build
 
 ## 📜 License
 Apache-2.0. Built for the Hackathon Technical Showcase.
+

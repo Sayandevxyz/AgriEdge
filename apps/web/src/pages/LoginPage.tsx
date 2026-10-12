@@ -16,6 +16,20 @@ export const LoginPage: React.FC = () => {
   const [password, setPassword] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
+  const [demoEnabled, setDemoEnabled] = useState<boolean>(false);
+
+  React.useEffect(() => {
+    apiFetch('/api/v1/auth/config')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && typeof data.demo_enabled === 'boolean') {
+          setDemoEnabled(data.demo_enabled);
+        }
+      })
+      .catch(() => {
+        setDemoEnabled(false);
+      });
+  }, []);
 
   React.useEffect(() => {
     if (user) {
@@ -136,53 +150,55 @@ export const LoginPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Quick Demo Mode Buttons */}
-        <div className="pt-4 border-t border-slate-100 text-center space-y-2.5">
-          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-            ⚡ Quick Access / Select Role to Continue
-          </span>
+        {/* Quick Demo Mode Buttons - Only visible if backend reports demo mode enabled */}
+        {demoEnabled && (
+          <div className="pt-4 border-t border-slate-100 text-center space-y-2.5">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+              ⚡ Quick Access / Select Role to Continue
+            </span>
 
-          <div className="flex flex-col gap-2">
-            <button
-              onClick={() => handleDemoSwitch('FARMER')}
-              className="w-full flex items-center justify-between p-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 rounded-xl border border-emerald-200 text-xs font-semibold transition"
-            >
-              <span className="flex items-center gap-2">
-                <UserCheck className="w-4 h-4 text-emerald-700" />
-                Sign In as Farmer Ramesh
-              </span>
-              <span className="text-[10px] bg-white px-2 py-0.5 rounded text-emerald-800 border border-emerald-300 font-mono">
-                Smallholder (2 Acres)
-              </span>
-            </button>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => handleDemoSwitch('FARMER')}
+                className="w-full flex items-center justify-between p-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 rounded-xl border border-emerald-200 text-xs font-semibold transition"
+              >
+                <span className="flex items-center gap-2">
+                  <UserCheck className="w-4 h-4 text-emerald-700" />
+                  Sign In as Farmer Ramesh
+                </span>
+                <span className="text-[10px] bg-white px-2 py-0.5 rounded text-emerald-800 border border-emerald-300 font-mono">
+                  Smallholder (2 Acres)
+                </span>
+              </button>
 
-            <button
-              onClick={() => handleDemoSwitch('FPO_ADMIN')}
-              className="w-full flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100 text-slate-900 rounded-xl border border-slate-200 text-xs font-semibold transition"
-            >
-              <span className="flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-agri-700" />
-                Sign In as FPO Agronomist Lead
-              </span>
-              <span className="text-[10px] bg-white px-2 py-0.5 rounded text-slate-700 border border-slate-200 font-mono">
-                342 Farmers Cluster
-              </span>
-            </button>
+              <button
+                onClick={() => handleDemoSwitch('FPO_ADMIN')}
+                className="w-full flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100 text-slate-900 rounded-xl border border-slate-200 text-xs font-semibold transition"
+              >
+                <span className="flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-agri-700" />
+                  Sign In as FPO Agronomist Lead
+                </span>
+                <span className="text-[10px] bg-white px-2 py-0.5 rounded text-slate-700 border border-slate-200 font-mono">
+                  342 Farmers Cluster
+                </span>
+              </button>
 
-            <button
-              onClick={() => handleDemoSwitch('SYSTEM_ADMIN')}
-              className="w-full flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100 text-slate-900 rounded-xl border border-slate-200 text-xs font-semibold transition"
-            >
-              <span className="flex items-center gap-2">
-                <Terminal className="w-4 h-4 text-slate-700" />
-                Sign In as System Observability Lead
-              </span>
-              <span className="text-[10px] bg-white px-2 py-0.5 rounded text-slate-700 border border-slate-200 font-mono">
-                Agent Health
-              </span>
-            </button>
+              <button
+                onClick={() => handleDemoSwitch('SYSTEM_ADMIN')}
+                className="w-full flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100 text-slate-900 rounded-xl border border-slate-200 text-xs font-semibold transition"
+              >
+                <span className="flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-slate-700" />
+                  Sign In as System Observability Lead
+                </span>
+                <span className="text-[10px] bg-white px-2 py-0.5 rounded text-slate-700 border border-slate-200 font-mono">
+                  Agent Health
+                </span>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
       </div>
     </div>

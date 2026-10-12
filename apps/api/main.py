@@ -33,137 +33,141 @@ async def lifespan(app: FastAPI):
     # 1. Create all database tables on configured engine (PostgreSQL / SQLite)
     Base.metadata.create_all(bind=engine)
 
-    # 2. Seed development records if database is fresh
-    db = SessionLocal()
-    try:
-        existing_user = db.query(User).first()
-        if not existing_user:
-            # Seed FPO
-            fpo = FPO(
-                name="Cauvery Basin Farmer Producer Organization",
-                code="FPO_KA_01",
-                district="Mandya",
-                state="Karnataka",
-                total_member_farmers=342
-            )
-            db.add(fpo)
-            db.commit()
-            db.refresh(fpo)
+    # 2. Seed development records ONLY when APP_MODE == "development" (in production seed nothing)
+    if settings.APP_MODE == "development":
+        db = SessionLocal()
+        try:
+            existing_user = db.query(User).first()
+            if not existing_user:
+                # Read seed password from environment variable SEED_PASSWORD
+                seed_pwd = os.getenv("SEED_PASSWORD") or settings.SEED_PASSWORD or "agriedge2026"
 
-            # Seed Farmer User
-            farmer_user = User(
-                email="ramesh.farmer@agriedge.internal",
-                hashed_password=hash_password("agriedge2026"),
-                full_name="Ramesh Gowda",
-                phone_number="+91 98450 12345",
-                role="FARMER",
-                language_preference="en"
-            )
-            db.add(farmer_user)
+                # Seed FPO
+                fpo = FPO(
+                    name="Cauvery Basin Farmer Producer Organization",
+                    code="FPO_KA_01",
+                    district="Mandya",
+                    state="Karnataka",
+                    total_member_farmers=342
+                )
+                db.add(fpo)
+                db.commit()
+                db.refresh(fpo)
 
-            # Seed FPO Admin User
-            fpo_user = User(
-                email="admin.cauveryfpo@agriedge.internal",
-                hashed_password=hash_password("agriedge2026"),
-                full_name="Dr. H. M. Shivakumar (FPO Agronomist)",
-                phone_number="+91 94480 54321",
-                role="FPO_ADMIN",
-                language_preference="en"
-            )
-            db.add(fpo_user)
+                # Seed Farmer User
+                farmer_user = User(
+                    email="ramesh.farmer@agriedge.internal",
+                    hashed_password=hash_password(seed_pwd),
+                    full_name="Ramesh Gowda",
+                    phone_number="+91 98450 12345",
+                    role="FARMER",
+                    language_preference="en"
+                )
+                db.add(farmer_user)
 
-            # Seed System Admin User
-            admin_user = User(
-                email="admin@agriedge.internal",
-                hashed_password=hash_password("agriedge2026"),
-                full_name="System Administrator",
-                phone_number="+91 90000 00000",
-                role="SYSTEM_ADMIN",
-                language_preference="en"
-            )
-            db.add(admin_user)
-            db.commit()
+                # Seed FPO Admin User
+                fpo_user = User(
+                    email="admin.cauveryfpo@agriedge.internal",
+                    hashed_password=hash_password(seed_pwd),
+                    full_name="Dr. H. M. Shivakumar (FPO Agronomist)",
+                    phone_number="+91 94480 54321",
+                    role="FPO_ADMIN",
+                    language_preference="en"
+                )
+                db.add(fpo_user)
 
-            # Detect real-time location dynamically with offline Chennai fallback
-            try:
-                live_loc = await location_service.detect_ip_location()
-                v_name = live_loc.get("village", "Chennai")
-                d_name = live_loc.get("district", "Chennai")
-                s_name = live_loc.get("state", "Tamil Nadu")
-                lat_val = live_loc.get("latitude", 13.0895)
-                lon_val = live_loc.get("longitude", 80.2739)
-            except Exception:
-                v_name = "Chennai"
-                d_name = "Chennai"
-                s_name = "Tamil Nadu"
-                lat_val = 13.0895
-                lon_val = 80.2739
+                # Seed System Admin User
+                admin_user = User(
+                    email="admin@agriedge.internal",
+                    hashed_password=hash_password(seed_pwd),
+                    full_name="System Administrator",
+                    phone_number="+91 90000 00000",
+                    role="SYSTEM_ADMIN",
+                    language_preference="en"
+                )
+                db.add(admin_user)
+                db.commit()
 
-            # Seed Farmer Profile & Farm
-            profile = FarmerProfile(
-                user_id=farmer_user.id,
-                fpo_id=fpo.id,
-                village=v_name,
-                block=v_name,
-                district=d_name,
-                state=s_name,
-                latitude=lat_val,
-                longitude=lon_val
-            )
-            db.add(profile)
-            db.commit()
-            db.refresh(profile)
-
-            farm = Farm(
-                farmer_id=profile.id,
-                fpo_id=fpo.id,
-                farm_name=f"Ramesh {v_name} Farm",
-                total_area_acres=2.0,
-                soil_type="loam",
-                irrigation_type="drip",
-                pump_hp=5.0,
-                pump_type="electric",
-                discharge_rate_lps=8.0,
-                village=v_name,
-                district=d_name,
-                latitude=lat_val,
-                longitude=lon_val
-            )
-            db.add(farm)
-            db.commit()
-            db.refresh(farm)
-
-            crop = Crop(
-                farm_id=farm.id,
-                crop_name="Tomato",
-                variety="Arka Rakshak (High-Yielding)",
-                planting_date="2026-08-20",
-                current_stage="flowering",
-                season="Kharif",
-                is_active=True
-            )
-            db.add(crop)
-            db.commit()
-            print(f"[AgriEdge] Seeded database entities with real-time location: {v_name}, {d_name}.")
-        else:
-            # Upgrade existing legacy farm location if matching old Channapatna default
-            existing_farm = db.query(Farm).first()
-            if existing_farm and (existing_farm.village == "Channapatna" or abs(existing_farm.latitude - 12.651) < 0.01):
+                # Detect real-time location dynamically with offline Chennai fallback
                 try:
                     live_loc = await location_service.detect_ip_location()
-                    existing_farm.village = live_loc.get("village", existing_farm.village)
-                    existing_farm.district = live_loc.get("district", existing_farm.district)
-                    existing_farm.latitude = live_loc.get("latitude", existing_farm.latitude)
-                    existing_farm.longitude = live_loc.get("longitude", existing_farm.longitude)
-                    existing_farm.farm_name = f"Ramesh {existing_farm.village} Farm"
-                    db.commit()
-                    print(f"[AgriEdge] Upgraded existing farm to live real-time location: {existing_farm.village}, {existing_farm.district}.")
-                except Exception as e:
-                    print(f"[AgriEdge] Farm location upgrade skipped: {e}")
-    except Exception as e:
-        print(f"[AgriEdge] Startup seeding note: {e}")
-    finally:
-        db.close()
+                    v_name = live_loc.get("village", "Chennai")
+                    d_name = live_loc.get("district", "Chennai")
+                    s_name = live_loc.get("state", "Tamil Nadu")
+                    lat_val = live_loc.get("latitude", 13.0895)
+                    lon_val = live_loc.get("longitude", 80.2739)
+                except Exception:
+                    v_name = "Chennai"
+                    d_name = "Chennai"
+                    s_name = "Tamil Nadu"
+                    lat_val = 13.0895
+                    lon_val = 80.2739
+
+                # Seed Farmer Profile & Farm
+                profile = FarmerProfile(
+                    user_id=farmer_user.id,
+                    fpo_id=fpo.id,
+                    village=v_name,
+                    block=v_name,
+                    district=d_name,
+                    state=s_name,
+                    latitude=lat_val,
+                    longitude=lon_val
+                )
+                db.add(profile)
+                db.commit()
+                db.refresh(profile)
+
+                farm = Farm(
+                    farmer_id=profile.id,
+                    fpo_id=fpo.id,
+                    farm_name=f"Ramesh {v_name} Farm",
+                    total_area_acres=2.0,
+                    soil_type="loam",
+                    irrigation_type="drip",
+                    pump_hp=5.0,
+                    pump_type="electric",
+                    discharge_rate_lps=8.0,
+                    village=v_name,
+                    district=d_name,
+                    latitude=lat_val,
+                    longitude=lon_val
+                )
+                db.add(farm)
+                db.commit()
+                db.refresh(farm)
+
+                crop = Crop(
+                    farm_id=farm.id,
+                    crop_name="Tomato",
+                    variety="Arka Rakshak (High-Yielding)",
+                    planting_date="2026-08-20",
+                    current_stage="flowering",
+                    season="Kharif",
+                    is_active=True
+                )
+                db.add(crop)
+                db.commit()
+                print(f"[AgriEdge] Seeded database entities with real-time location: {v_name}, {d_name}.")
+            else:
+                # Upgrade existing legacy farm location if matching old Channapatna default
+                existing_farm = db.query(Farm).first()
+                if existing_farm and (existing_farm.village == "Channapatna" or abs(existing_farm.latitude - 12.651) < 0.01):
+                    try:
+                        live_loc = await location_service.detect_ip_location()
+                        existing_farm.village = live_loc.get("village", existing_farm.village)
+                        existing_farm.district = live_loc.get("district", existing_farm.district)
+                        existing_farm.latitude = live_loc.get("latitude", existing_farm.latitude)
+                        existing_farm.longitude = live_loc.get("longitude", existing_farm.longitude)
+                        existing_farm.farm_name = f"Ramesh {existing_farm.village} Farm"
+                        db.commit()
+                        print(f"[AgriEdge] Upgraded existing farm to live real-time location: {existing_farm.village}, {existing_farm.district}.")
+                    except Exception as e:
+                        print(f"[AgriEdge] Farm location upgrade skipped: {e}")
+        except Exception as e:
+            print(f"[AgriEdge] Startup seeding note: {e}")
+        finally:
+            db.close()
 
     yield
 

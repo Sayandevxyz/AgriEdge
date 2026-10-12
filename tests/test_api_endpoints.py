@@ -12,12 +12,14 @@ Tests FastAPI endpoints using TestClient covering:
 - Market fallback flags is_realtime=False when live source is absent
 """
 
+import uuid
 import pytest
 from fastapi.testclient import TestClient
 from apps.api.main import app
-from apps.api.config import settings
+from apps.api.config import settings, Settings
 from apps.api.database import SessionLocal
 from apps.api.models import User, Farm, Crop, FPO, FarmerProfile
+from apps.api.rate_limiter import limiter
 from services.market.market_service import market_agent
 
 
@@ -277,3 +279,249 @@ async def test_market_fallback_flags_is_realtime_false(monkeypatch):
     assert data["is_realtime"] is False
     assert data["is_live_available"] is False
     assert "Estimated benchmark (not live)" in data["data_source"]
+
+
+def test_rate_limit_and_oversized_upload(client):
+    """
+    Verify:
+    1. Rapid POSTs to /auth/login return 429 after exceeding limit (15 requests/min).
+    2. Uploading a file larger than 10MB to vision endpoint returns 413 or 400.
+    """
+    limiter.reset()
+    try:
+        # Rapidly attempt login from the same client IP
+        # 15 allowed in sliding window; 16th returns 429
+        responses = []
+        for i in range(16):
+            res = client.post("/api/v1/auth/login", json={
+                "email": "ramesh.farmer@agriedge.internal",
+                "password": "wrongpassword"
+            })
+            responses.append(res.status_code)
+
+        assert 429 in responses, f"Expected 429 in rapid login attempts, got: {responses}"
+        assert responses[-1] == 429
+    finally:
+        limiter.reset()
+
+    # Oversized upload test (> 10MB)
+    large_payload = b"0" * (10 * 1024 * 1024 + 1024)  # 10MB + 1KB
+    upload_res = client.post(
+        "/api/v1/vision/detect-crop",
+        files={"file": ("large_leaf.jpg", large_payload, "image/jpeg")}
+    )
+    assert upload_res.status_code in [413, 400], f"Expected 413 or 400 for >10MB upload, got {upload_res.status_code}"
+
+
+def test_password_policy_rejected_at_register(client):
+    """Verify passwords 'short1', 'onlyletters' and '12345678' are rejected at register with 422."""
+    weak_passwords = ["short1", "onlyletters", "12345678"]
+    for wp in weak_passwords:
+        res = client.post("/api/v1/auth/register", json={
+            "email": f"weak_{wp}_{uuid.uuid4().hex[:6]}@agriedge.io",
+            "password": wp,
+            "full_name": f"Weak Tester {wp}"
+        })
+        assert res.status_code == 422, f"Expected 422 for weak password '{wp}', got {res.status_code}: {res.text}"
+
+
+def test_auth_refresh_token_lifecycle(client):
+    """
+    Verify:
+    1. Valid refresh token returns a new access token (200).
+    2. An ACCESS token sent as a refresh token is rejected (401).
+    3. An expired or garbage token returns 401.
+    """
+    # 1. Login to get both access and refresh tokens
+    login_res = client.post("/api/v1/auth/login", json={
+        "email": "ramesh.farmer@agriedge.internal",
+        "password": "agriedge2026"
+    })
+    assert login_res.status_code == 200
+    tokens = login_res.json()
+    access_token = tokens["access_token"]
+    refresh_token = tokens["refresh_token"]
+
+    # Valid refresh token exchange
+    ref_res = client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
+    assert ref_res.status_code == 200
+    ref_data = ref_res.json()
+    assert "access_token" in ref_data
+    assert "refresh_token" in ref_data
+
+    # ACCESS token passed to refresh endpoint must be rejected with 401
+    acc_as_ref = client.post("/api/v1/auth/refresh", json={"refresh_token": access_token})
+    assert acc_as_ref.status_code == 401, f"Expected 401 when access token sent as refresh, got {acc_as_ref.status_code}"
+
+    # Expired / garbage token returns 401
+    bad_token = client.post("/api/v1/auth/refresh", json={"refresh_token": "not.a.valid.jwt.token"})
+    assert bad_token.status_code == 401
+
+
+def test_admin_create_users_role_enforcement(client):
+    """
+    Verify POST /auth/admin/users:
+    - Works for SYSTEM_ADMIN (200/201)
+    - Returns 403 for FARMER and FPO_ADMIN
+    - Returns 401 without token
+    """
+    admin_payload = {
+        "email": f"agronomist_{uuid.uuid4().hex[:6]}@cauveryfpo.internal",
+        "password": "StrongPassword2026",
+        "full_name": "Senior Agronomist",
+        "role": "AGRONOMIST"
+    }
+
+    # 1. Without token -> 401
+    unauth_res = client.post("/api/v1/auth/admin/users", json=admin_payload)
+    assert unauth_res.status_code == 401
+
+    # 2. As FARMER -> 403
+    farmer_login = client.post("/api/v1/auth/login", json={
+        "email": "ramesh.farmer@agriedge.internal",
+        "password": "agriedge2026"
+    })
+    farmer_headers = {"Authorization": f"Bearer {farmer_login.json()['access_token']}"}
+    farmer_res = client.post("/api/v1/auth/admin/users", json=admin_payload, headers=farmer_headers)
+    assert farmer_res.status_code == 403
+
+    # 3. As FPO_ADMIN -> 403
+    fpo_login = client.post("/api/v1/auth/login", json={
+        "email": "admin.cauveryfpo@agriedge.internal",
+        "password": "agriedge2026"
+    })
+    fpo_headers = {"Authorization": f"Bearer {fpo_login.json()['access_token']}"}
+    fpo_res = client.post("/api/v1/auth/admin/users", json=admin_payload, headers=fpo_headers)
+    assert fpo_res.status_code == 403
+
+    # 4. As SYSTEM_ADMIN -> 200/201
+    admin_login = client.post("/api/v1/auth/login", json={
+        "email": "admin@agriedge.internal",
+        "password": "agriedge2026"
+    })
+    admin_headers = {"Authorization": f"Bearer {admin_login.json()['access_token']}"}
+    admin_res = client.post("/api/v1/auth/admin/users", json=admin_payload, headers=admin_headers)
+    assert admin_res.status_code in [200, 201]
+    assert admin_res.json()["role"] == "AGRONOMIST"
+
+
+def test_production_safety_settings_raises():
+    """Verify that with APP_MODE=production and a missing or example JWT_SECRET, Settings() raises."""
+    # Missing JWT_SECRET in production mode raises ValueError
+    with pytest.raises(ValueError):
+        Settings(APP_MODE="production", JWT_SECRET="", JWT_REFRESH_SECRET="production_refresh_sec_key_1234567")
+
+    # Example JWT_SECRET in production mode raises ValueError
+    for example_sec in [
+        "agriedge_jwt_super_secret_key_change_in_production_987654321",
+        "your_jwt_secret",
+        "secret",
+        "changeme"
+    ]:
+        with pytest.raises(ValueError):
+            Settings(APP_MODE="production", JWT_SECRET=example_sec, JWT_REFRESH_SECRET="production_refresh_sec_key_1234567")
+
+    # Missing JWT_REFRESH_SECRET in production mode raises ValueError
+    with pytest.raises(ValueError):
+        Settings(APP_MODE="production", JWT_SECRET="valid_production_secret_key_1234567", JWT_REFRESH_SECRET="")
+
+
+def test_ownership_isolation(client):
+    """
+    Verify strict ownership isolation:
+    User B cannot read or modify User A's farm, advisory or feedback (expect 403/404).
+    """
+    # 1. Register User A and create a farm
+    u_a_email = f"user_a_{uuid.uuid4().hex[:6]}@agriedge.io"
+    res_a = client.post("/api/v1/auth/register", json={
+        "email": u_a_email,
+        "password": "Password123UserA",
+        "full_name": "Farmer User A"
+    })
+    assert res_a.status_code in [200, 201]
+    token_a = res_a.json()["access_token"]
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+
+    farm_a_res = client.post("/api/v1/farms", json={
+        "farm_name": "User A Private Farm",
+        "crop_name": "Tomato",
+        "variety": "Arka Rakshak",
+        "planting_date": "2026-08-20",
+        "total_area_acres": 2.5,
+        "soil_type": "clay_loam",
+        "irrigation_type": "drip",
+        "pump_hp": 5.0,
+        "pump_type": "electric",
+        "discharge_rate_lps": 8.0,
+        "village": "Hassan",
+        "district": "Hassan",
+        "state": "Karnataka",
+        "latitude": 13.0,
+        "longitude": 76.1
+    }, headers=headers_a)
+    assert farm_a_res.status_code == 201
+    farm_a_id = farm_a_res.json()["farm_id"]
+
+    # Generate an advisory for User A
+    adv_a_res = client.post("/api/v1/advisory/generate", json={
+        "crop": "Tomato",
+        "planting_date": "2026-08-20",
+        "farm_acres": 2.5,
+        "soil_type": "clay_loam",
+        "irrigation_method": "drip",
+        "pump_hp": 5.0,
+        "latitude": 13.0,
+        "longitude": 76.1
+    }, headers=headers_a)
+    assert adv_a_res.status_code == 200
+    advisory_a_uuid = adv_a_res.json()["advisory_id"]
+
+    # Submit feedback for User A's advisory by User A
+    fb_a_res = client.post("/api/v1/feedback", json={
+        "advisory_id": advisory_a_uuid,
+        "predicted_action": "APPLY IRRIGATION",
+        "action_taken": "Irrigated 1.5 hours",
+        "water_used_litres": 3200,
+        "crop_condition": "Improved",
+        "farmer_comment": "User A feedback comment"
+    }, headers=headers_a)
+    assert fb_a_res.status_code == 200
+    feedback_a_uuid = fb_a_res.json()["feedback_id"]
+
+    # 2. Register User B
+    u_b_email = f"user_b_{uuid.uuid4().hex[:6]}@agriedge.io"
+    res_b = client.post("/api/v1/auth/register", json={
+        "email": u_b_email,
+        "password": "Password123UserB",
+        "full_name": "Farmer User B"
+    })
+    assert res_b.status_code in [200, 201]
+    token_b = res_b.json()["access_token"]
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+
+    # User B cannot READ User A's farm -> 404
+    assert client.get(f"/api/v1/farms/{farm_a_id}", headers=headers_b).status_code == 404
+
+    # User B cannot UPDATE User A's farm -> 404
+    assert client.put(f"/api/v1/farms/{farm_a_id}", json={"farm_name": "Hijacked Farm"}, headers=headers_b).status_code == 404
+
+    # User B cannot DELETE User A's farm -> 404
+    assert client.delete(f"/api/v1/farms/{farm_a_id}", headers=headers_b).status_code == 404
+
+    # User B cannot READ User A's advisory -> 403 or 404
+    adv_b_read = client.get(f"/api/v1/advisories/{advisory_a_uuid}", headers=headers_b)
+    assert adv_b_read.status_code in [403, 404]
+
+    # User B cannot MODIFY / submit feedback for User A's advisory -> 403
+    fb_b_submit = client.post("/api/v1/feedback", json={
+        "advisory_id": advisory_a_uuid,
+        "predicted_action": "APPLY IRRIGATION",
+        "action_taken": "Malicious feedback attempt by User B",
+        "crop_condition": "Deteriorated"
+    }, headers=headers_b)
+    assert fb_b_submit.status_code in [403, 404]
+
+    # User B cannot READ User A's feedback -> 403 or 404
+    fb_b_read = client.get(f"/api/v1/feedback/{feedback_a_uuid}", headers=headers_b)
+    assert fb_b_read.status_code in [403, 404]
+

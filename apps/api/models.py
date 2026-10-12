@@ -4,7 +4,11 @@ Contains schemas for User, Role, FarmerProfile, FPO, Farm, Crop,
 Advisory, WeatherObservation, Feedback, Outcome, and System Events.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
+
+
+def utc_now():
+    return datetime.now(timezone.utc)
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, JSON
 )
@@ -23,7 +27,7 @@ class User(Base):
     role = Column(String(30), default="FARMER", nullable=False)  # FARMER, FPO_ADMIN, AGRONOMIST, SYSTEM_ADMIN
     language_preference = Column(String(10), default="en")  # en, hi, ta, te, mr, bn, kn
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     farmer_profile = relationship("FarmerProfile", back_populates="user", uselist=False)
 
@@ -37,7 +41,7 @@ class FPO(Base):
     district = Column(String(100), nullable=False)
     state = Column(String(100), default="Karnataka")
     total_member_farmers = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     farms = relationship("Farm", back_populates="fpo")
 
@@ -55,7 +59,7 @@ class FarmerProfile(Base):
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
     preferred_communication = Column(String(20), default="APP")  # APP, SMS, WHATSAPP
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     user = relationship("User", back_populates="farmer_profile")
     farms = relationship("Farm", back_populates="farmer")
@@ -78,7 +82,7 @@ class Farm(Base):
     district = Column(String(100), nullable=True)
     latitude = Column(Float, default=12.97)
     longitude = Column(Float, default=77.59)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     farmer = relationship("FarmerProfile", back_populates="farms")
     fpo = relationship("FPO", back_populates="farms")
@@ -96,7 +100,7 @@ class Crop(Base):
     current_stage = Column(String(50), default="vegetative")
     season = Column(String(30), default="Kharif")
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     farm = relationship("Farm", back_populates="crops")
     advisories = relationship("Advisory", back_populates="crop")
@@ -131,7 +135,7 @@ class Advisory(Base):
     why_rationale = Column(Text, nullable=False)
     treatment_recommendations = Column(Text, nullable=True)
     full_payload = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     crop = relationship("Crop", back_populates="advisories")
     feedbacks = relationship("Feedback", back_populates="advisory")
@@ -151,7 +155,7 @@ class Feedback(Base):
     yield_outcome_kg = Column(Float, nullable=True)
     farmer_comment = Column(Text, nullable=True)
     curated_for_retraining = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     advisory = relationship("Advisory", back_populates="feedbacks")
 
@@ -166,4 +170,4 @@ class SystemAuditLog(Base):
     duration_ms = Column(Float, default=0.0)
     status = Column(String(20), default="SUCCESS")
     details = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)

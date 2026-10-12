@@ -329,3 +329,17 @@ def demo_login(role: str, db: Session = Depends(get_db)):
         role=user.role,
         language_preference=user.language_preference
     )
+
+
+@router.get("/config")
+def get_auth_config():
+    """
+    Returns authentication and runtime environment capabilities:
+    - demo_enabled: True if APP_MODE == 'development' or ENABLE_DEMO_LOGIN is True
+    - app_mode: Current application mode ('development' or 'production')
+    """
+    demo_enabled = (settings.APP_MODE == "development" or settings.ENABLE_DEMO_LOGIN)
+    return {
+        "demo_enabled": demo_enabled,
+        "app_mode": settings.APP_MODE
+    }

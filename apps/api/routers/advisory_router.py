@@ -7,7 +7,7 @@ and stores historical advisory records.
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from apps.api.database import get_db
-from apps.api.models import User, Advisory, Farm, Crop, SystemAuditLog
+from apps.api.models import User, Advisory, Farm, Crop, SystemAuditLog, FarmerProfile
 from apps.api.schemas import AdvisoryRequest
 from apps.api.auth import get_current_user
 from services.advisory.advisory_orchestrator import advisory_orchestrator
@@ -42,8 +42,18 @@ async def generate_advisory_endpoint(
             stage_override=req.stage_override
         )
 
-        # Find or create a crop reference to associate the advisory
-        crop_record = db.query(Crop).filter(Crop.crop_name.ilike(req.crop)).first()
+        # Find or create a crop reference to associate the advisory with the current user's farm
+        profile = db.query(FarmerProfile).filter(FarmerProfile.user_id == current_user.id).first()
+        crop_record = None
+        if profile:
+            user_farm_ids = [f.id for f in db.query(Farm).filter(Farm.farmer_id == profile.id).all()]
+            if user_farm_ids:
+                crop_record = db.query(Crop).filter(
+                    Crop.farm_id.in_(user_farm_ids),
+                    Crop.crop_name.ilike(req.crop)
+                ).first()
+        if not crop_record:
+            crop_record = db.query(Crop).filter(Crop.crop_name.ilike(req.crop)).first()
         crop_id = crop_record.id if crop_record else 1
 
         # Persist advisory in database
@@ -120,3 +130,40 @@ async def recommend_irrigation_endpoint(
         "energy_metrics": advisory_payload["energy"],
         "weather_context": advisory_payload["weather_context"]
     }
+
+
+@router.get("/advisories/{advisory_uuid}")
+def get_advisory_by_uuid(
+    advisory_uuid: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves advisory details by advisory_uuid.
+    Enforces strict farmer ownership: farmers may only access advisories associated with their own farms.
+    """
+    advisory = db.query(Advisory).filter(Advisory.advisory_uuid == advisory_uuid).first()
+    if not advisory:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "ADVISORY_NOT_FOUND", "message": f"Advisory '{advisory_uuid}' not found."}
+        )
+
+    if current_user.role not in ["SYSTEM_ADMIN", "FPO_ADMIN"]:
+        if advisory.crop:
+            profile = db.query(FarmerProfile).filter(FarmerProfile.user_id == current_user.id).first()
+            farm = db.query(Farm).filter(Farm.id == advisory.crop.farm_id).first()
+            if farm and (not profile or farm.farmer_id != profile.id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail={"code": "FORBIDDEN", "message": "You do not have permission to view this advisory."}
+                )
+
+    return advisory.full_payload or {
+        "advisory_id": advisory.advisory_uuid,
+        "crop_name": advisory.crop_name,
+        "growth_stage": advisory.growth_stage,
+        "summary": advisory.summary,
+        "water": {"action": advisory.irrigation_action}
+    }
+

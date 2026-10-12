@@ -1,6 +1,13 @@
 """
 AgriEdge In-Memory Rate Limiter and Upload Size Enforcer
 Protects sensitive auth, voice, vision, and simulation endpoints against abuse.
+
+Architecture & Scalability Note:
+This in-memory rate limiter operates per-process using a thread-safe sliding window algorithm.
+In multi-worker (e.g. uvicorn with multiple workers) or horizontally scaled multi-instance deployments,
+each process maintains its own sliding window. The designated production upgrade path for cluster-wide
+rate limiting is Redis-backed sliding window / token bucket (e.g., redis-py or slowapi backed by Redis)
+configured via `settings.REDIS_URL`.
 """
 
 import time
@@ -8,11 +15,39 @@ from collections import defaultdict
 from threading import Lock
 from typing import Optional
 from fastapi import Request, HTTPException, status
+from apps.api.config import settings
 
 MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
+def get_client_ip(request: Request, trusted_proxy_count: Optional[int] = None) -> str:
+    """
+    Extracts the real client IP by inspecting the X-Forwarded-For header.
+    To prevent IP spoofing, it resolves the first untrusted hop from the right
+    based on the configured TRUSTED_PROXY_COUNT.
+    """
+    if trusted_proxy_count is None:
+        trusted_proxy_count = getattr(settings, "TRUSTED_PROXY_COUNT", 1)
+
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        ips = [ip.strip() for ip in forwarded.split(",") if ip.strip()]
+        if ips:
+            # First untrusted hop from the right:
+            # If ips = [client, untrusted_proxy, trusted_proxy] and trusted_proxy_count = 1:
+            # len(ips) = 3 > 1 => ips[-1 - 1] = ips[-2]
+            if len(ips) > trusted_proxy_count:
+                return ips[-1 - trusted_proxy_count]
+            return ips[0]
+
+    return request.client.host if request.client else "unknown"
+
+
 class InMemoryRateLimiter:
+    """
+    Thread-safe in-memory sliding window rate limiter.
+    Operates per-process. Use Redis for multi-instance cluster synchronization.
+    """
     def __init__(self):
         self._requests = defaultdict(list)
         self._lock = Lock()
@@ -46,10 +81,7 @@ limiter = InMemoryRateLimiter()
 
 def rate_limit(max_requests: int = 60, window_seconds: int = 60, key_prefix: str = ""):
     def dependency(request: Request):
-        client_ip = request.client.host if request.client else "unknown"
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            client_ip = forwarded.split(",")[0].strip()
+        client_ip = get_client_ip(request)
         key = f"{key_prefix}:{client_ip}"
         limiter.check_rate_limit(key, max_requests, window_seconds)
         return True

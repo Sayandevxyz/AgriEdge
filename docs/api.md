@@ -8,8 +8,21 @@ ReDoc Documentation: `http://localhost:8000/redoc`
 
 ## 1. Authentication (`/auth`)
 
+### `GET /auth/config`
+Public runtime configuration endpoint used by client frontends.
+- **Response (200 OK):**
+  ```json
+  {
+    "demo_enabled": true,
+    "app_mode": "development"
+  }
+  ```
+- In `production` mode, `demo_enabled` evaluates to `false`, causing the login page to hide 1-click demo login buttons.
+
 ### `POST /auth/register`
-Creates a new user profile (FARMER, FPO_ADMIN, AGRONOMIST, SYSTEM_ADMIN).
+Public user registration. **Always forces role `FARMER`** regardless of payload parameters.
+- **Password Policy:** Must be at least 8 characters and include at least one letter and one number. Rejects weak passwords with `422 Unprocessable Entity`.
+- **Rate Limit:** 10 requests per 60 seconds.
 - **Request:**
   ```json
   {
@@ -17,7 +30,9 @@ Creates a new user profile (FARMER, FPO_ADMIN, AGRONOMIST, SYSTEM_ADMIN).
     "password": "Password123!",
     "full_name": "Ramesh Gowda",
     "phone_number": "+91 98450 12345",
-    "role": "FARMER",
+    "village": "Hassan",
+    "district": "Hassan",
+    "state": "Karnataka",
     "language_preference": "en"
   }
   ```
@@ -35,21 +50,58 @@ Creates a new user profile (FARMER, FPO_ADMIN, AGRONOMIST, SYSTEM_ADMIN).
   ```
 
 ### `POST /auth/login`
-Authenticates user credentials and returns JWT bearer token.
+Authenticates credentials and returns a fresh access token and refresh token.
+- **Rate Limit:** 15 requests per 60 seconds (16th returns `429 Too Many Requests`).
+- **Response (200 OK):** Returns `TokenResponse` with `access_token` and `refresh_token`.
+
+### `POST /auth/refresh`
+Rotates access and refresh tokens.
+- **Request:**
+  ```json
+  {
+    "refresh_token": "eyJhbGciOi..."
+  }
+  ```
+- **Validation:**
+  - Token signature is verified against `JWT_REFRESH_SECRET`.
+  - Token claims must satisfy `"type": "refresh"`. An access token sent as a refresh token is rejected with `401 Unauthorized` (`INVALID_TOKEN_TYPE`).
+  - Expired or invalid tokens return `401 Unauthorized`.
+- **Response (200 OK):** Fresh `access_token` and `refresh_token`.
+
+### `POST /auth/admin/users`
+Protected endpoint accessible **only to `SYSTEM_ADMIN`** (`require_roles("SYSTEM_ADMIN")`).
+Allows provisioning users with arbitrary roles (`FARMER`, `FPO_ADMIN`, `AGRONOMIST`, `SYSTEM_ADMIN`).
+- **Authorization:** `Bearer <admin_jwt_token>`
+- Returns `403 Forbidden` for `FARMER` or `FPO_ADMIN`, and `401 Unauthorized` without a token.
+- **Request:**
+  ```json
+  {
+    "email": "agronomist@cauveryfpo.internal",
+    "password": "SecurePassword2026",
+    "full_name": "Dr. Ananya Sharma",
+    "role": "FPO_ADMIN"
+  }
+  ```
 
 ### `POST /auth/demo-login/{role}`
 Quick 1-click Judge Mode demo login:
-- `role`: `FARMER`, `FPO_ADMIN`, or `SYSTEM_ADMIN`.
+- Allowed roles: `farmer`, `fpo_admin`, `system_admin`.
+- **Security Guard:** Returns `404 Not Found` when `APP_MODE == "production"` unless `ENABLE_DEMO_LOGIN == True`.
 
 ---
 
 ## 2. Farmer & Farms (`/farmer`, `/farms`)
+
+All farm endpoints enforce **strict farmer ownership**. A farmer cannot access or modify farms belonging to another user.
 
 ### `GET /farmer/profile`
 Retrieves authenticated farmer's profile, village, and farm counts.
 
 ### `GET /farms`
 Returns all farms owned by the authenticated farmer.
+
+### `GET /farms/{farm_id}`
+Returns details of the specified farm. Returns `404 Not Found` if the farm does not belong to the caller.
 
 ### `POST /farms`
 Registers a new farm boundary, soil type, crop sowing date, and pump capacity.
@@ -66,93 +118,82 @@ Registers a new farm boundary, soil type, crop sowing date, and pump capacity.
     "pump_hp": 5.0,
     "pump_type": "electric",
     "discharge_rate_lps": 8.0,
-    "village": "Channapatna",
-    "district": "Ramanagara"
+    "village": "Hassan",
+    "district": "Hassan",
+    "state": "Karnataka",
+    "latitude": 13.08,
+    "longitude": 76.10
   }
   ```
+
+### `PUT /farms/{farm_id}`
+Updates farm attributes. Returns `404 Not Found` if the farm is not owned by the caller.
+
+### `DELETE /farms/{farm_id}`
+Deletes farm and its associated crops. Returns `404 Not Found` if the farm is not owned by the caller.
+
+### `GET /farmer/history`
+Returns past advisory recommendations linked to crops on the authenticated farmer's farms.
 
 ---
 
 ## 3. Vision & Leaf Diagnostics (`/vision`)
 
+### `POST /vision/detect-crop`
+Automated AI leaf species detection and morphology extractor.
+- Accepts `multipart/form-data` with `file`.
+- Allowed MIME types: `image/jpeg`, `image/png`, `image/webp` (returns `400 Bad Request` otherwise).
+- Max file size: **10 MB** (returns `413 Request Entity Too Large` otherwise).
+
 ### `POST /vision/analyze`
-Multipart file upload of crop leaf photograph.
-- Validates image dimensions ($\ge 200\times 200$), brightness, and Laplacian blur score ($\ge 30.0$).
-- Performs optical color channel analysis.
-- Invokes `AdvisoryOrchestrator` to produce unified diagnosis, water advice, and energy calculation.
+Full foliar disease analysis and multi-agent advisory orchestration from an uploaded leaf photo.
+- Validates image dimensions, blur sharpness (Laplacian variance $\ge 30$), and crop presence.
 
 ---
 
 ## 4. Advisory & Irrigation (`/advisory`, `/irrigation`)
 
 ### `POST /advisory/generate`
-Synthesizes multi-agent intelligence into structured recommendations.
-- **Request:**
-  ```json
-  {
-    "crop": "Tomato",
-    "planting_date": "2026-08-20",
-    "farm_acres": 2.0,
-    "soil_type": "loam",
-    "irrigation_method": "drip",
-    "pump_hp": 5.0,
-    "pump_type": "electric",
-    "latitude": 12.65,
-    "longitude": 77.20
-  }
-  ```
-- **Response:** Complete JSON object containing `water`, `energy`, `crop_health`, `weather_context`, `what_to_do`, `what_not_to_do`, and `citations`.
+Multi-agent crop intelligence pipeline combining FAO-56 Penman-Monteith ET0, crop coefficient $K_c$, USDA effective rainfall, pump energy calculations, and ICAR/TNAU RAG agronomic advice.
+- Requires authentication (`Bearer <jwt_token>`).
+
+### `GET /advisories/{advisory_uuid}`
+Retrieves an existing advisory by UUID. Enforces farmer ownership isolation (returns `403 Forbidden` if another farmer attempts access).
 
 ### `POST /irrigation/recommend`
-Fast-path endpoint for pure crop water triage and runtime calculation without foliar photo.
+Fast-path endpoint for instant irrigation runtime triage without uploading foliar imagery.
 
 ---
 
-## 5. Voice & NLU (`/voice`)
-
-### `POST /voice/transcribe`
-Processes query text or audio blob, detects intent (`IRRIGATION_QUERY`, `DISEASE_QUERY`, `WEATHER_QUERY`), extracts entities, and synthesizes spoken text.
-
----
-
-## 6. Weather & Rainfall Hazard (`/weather`)
-
-### `GET /weather/current?lat=12.65&lon=77.20`
-Returns temperature, humidity, wind, and precipitation.
-
-### `GET /weather/forecast?lat=12.65&lon=77.20`
-Returns 5-day daily precipitation, rain hazard risk, and optimal irrigation windows.
-
----
-
-## 7. Scenario Simulation (`/scenario`)
-
-### `POST /scenario/simulate`
-Simulates "Wait 2 days", "Reduce irrigation by 20%", or "Heavy rain occurs".
-
----
-
-## 8. Feedback & Outcome Loop (`/feedback`, `/outcomes`)
+## 5. Feedback & Outcomes (`/feedback`, `/outcomes`)
 
 ### `POST /feedback`
-Logs farmer action taken, water actually applied, and crop response. Triggers `OutcomeAgent` efficacy scoring.
+Logs farmer action taken, water actually applied, and crop response.
+- **Ownership Guard:** Validates that the referenced `advisory_id` belongs to the authenticated farmer's crop (returns `403 Forbidden` if another farmer attempts submission).
+- Triggers the `OutcomeAgent` efficacy scoring pipeline for continuous learning.
+
+### `GET /feedback/{feedback_uuid}`
+Retrieves feedback details. Enforces ownership isolation (`403 Forbidden` for unauthorized callers).
 
 ---
 
-## 9. FPO Regional Intelligence (`/fpo`)
+## 6. Location & Geocoding (`/location`)
 
-### `GET /fpo/dashboard`
-Aggregated smallholder metrics, water savings, energy trends, and crop distribution.
-
-### `GET /fpo/disease-map`
-Village and block level disease hotspot centroid clusters. Strictly masks individual farm locations.
+### `GET /location/reverse-geocode?lat=13.08&lon=80.27`
+Performs reverse geocoding from GPS coordinates with offline regional fallback.
+- Supports both GET query parameters (`lat`, `lon`) and POST body payloads.
 
 ---
 
-## 10. Admin & Health (`/admin`, `/health`)
+## 7. FPO Regional Intelligence (`/fpo`)
 
-### `GET /admin/system`
-Observability metrics, active agents, token counts, and cost per advisory.
+Protected by `require_roles("FPO_ADMIN", "SYSTEM_ADMIN")`.
+- `GET /fpo/dashboard`: Aggregated smallholder metrics, water savings, energy trends, and crop distribution.
+- `GET /fpo/disease-map`: Village and block level disease hotspot centroid clusters. Strictly masks individual farm GPS locations.
 
-### `GET /health`
-System health probe: database, cache, vision, weather, ET, and RAG states.
+---
+
+## 8. System Administration (`/admin`)
+
+Protected by `require_roles("SYSTEM_ADMIN")`.
+- `GET /admin/system`: System observability metrics, active agents, token counts, and cost telemetry.

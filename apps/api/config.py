@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     APP_MODE: str = "development"  # development / production
     ENABLE_DEMO_LOGIN: bool = False
+    TRUSTED_PROXY_COUNT: int = 1
+    SEED_PASSWORD: str = ""
 
     # Database
     DATABASE_URL: str = "sqlite:///./agriedge.db"
