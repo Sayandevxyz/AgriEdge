@@ -40,7 +40,8 @@ If creating the service manually:
   DATABASE_URL=postgresql://...
   JWT_SECRET=super_secret_64_char_key
   JWT_REFRESH_SECRET=super_refresh_64_char_key
-  CORS_ORIGINS=https://agriedge.vercel.app,http://localhost:5173
+  CORS_ORIGINS=https://agriedge.vercel.app,https://agri-edge-pied.vercel.app,http://localhost:5173
+  CORS_ORIGIN_REGEX=https://.*\.vercel\.app
   OPENROUTER_API_KEY=sk-or-v1-...
   ```
 

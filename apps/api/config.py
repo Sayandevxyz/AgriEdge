@@ -49,7 +49,8 @@ class Settings(BaseSettings):
     MARKET_API_KEY: str = ""
 
     # CORS
-    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
+    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,https://agriedge.vercel.app,https://agri-edge-pied.vercel.app"
+    CORS_ORIGIN_REGEX: str = r"https://.*\.vercel\.app"
 
     @property
     def cors_origins_list(self) -> List[str]:

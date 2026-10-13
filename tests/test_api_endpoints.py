@@ -525,3 +525,48 @@ def test_ownership_isolation(client):
     fb_b_read = client.get(f"/api/v1/feedback/{feedback_a_uuid}", headers=headers_b)
     assert fb_b_read.status_code in [403, 404]
 
+
+def test_cors_preflight_and_origins(client):
+    """Verify CORS preflight and regular requests succeed for allowed origins and Vercel domains."""
+    # 1. Production Vercel domain explicitly configured
+    res_vercel_prod = client.options(
+        "/api/v1/auth/login",
+        headers={
+            "Origin": "https://agri-edge-pied.vercel.app",
+            "Access-Control-Request-Method": "POST",
+        }
+    )
+    assert res_vercel_prod.status_code == 200
+    assert res_vercel_prod.headers.get("access-control-allow-origin") == "https://agri-edge-pied.vercel.app"
+    assert res_vercel_prod.headers.get("access-control-allow-credentials") == "true"
+
+    # 2. Vercel preview domain matching CORS_ORIGIN_REGEX
+    res_vercel_preview = client.options(
+        "/api/v1/auth/config",
+        headers={
+            "Origin": "https://agri-edge-git-feat-preview.vercel.app",
+            "Access-Control-Request-Method": "GET",
+        }
+    )
+    assert res_vercel_preview.status_code == 200
+    assert res_vercel_preview.headers.get("access-control-allow-origin") == "https://agri-edge-git-feat-preview.vercel.app"
+
+    # 3. GET /api/v1/auth/config with Origin header
+    get_res = client.get(
+        "/api/v1/auth/config",
+        headers={"Origin": "https://agri-edge-pied.vercel.app"}
+    )
+    assert get_res.status_code == 200
+    assert get_res.headers.get("access-control-allow-origin") == "https://agri-edge-pied.vercel.app"
+
+    # 4. Disallowed random origin is blocked
+    res_disallowed = client.options(
+        "/api/v1/auth/login",
+        headers={
+            "Origin": "https://malicious-site.evil.com",
+            "Access-Control-Request-Method": "POST",
+        }
+    )
+    assert res_disallowed.status_code == 400
+
+

@@ -29,4 +29,6 @@ services:
       - key: MARKET_API_KEY
         sync: false
       - key: CORS_ORIGINS
-        value: http://localhost:5173,https://agriedge.vercel.app
+        value: http://localhost:5173,https://agriedge.vercel.app,https://agri-edge-pied.vercel.app
+      - key: CORS_ORIGIN_REGEX
+        value: https://.*\.vercel\.app

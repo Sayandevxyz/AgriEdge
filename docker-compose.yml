@@ -50,7 +50,8 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       JWT_SECRET: ${JWT_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000,http://localhost}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000,http://localhost,https://agriedge.vercel.app,https://agri-edge-pied.vercel.app}
+      CORS_ORIGIN_REGEX: ${CORS_ORIGIN_REGEX:-https://.*\.vercel\.app}
     ports:
       - "8000:8000"
 
