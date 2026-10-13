@@ -9,9 +9,8 @@ import time
 import httpx
 from typing import Dict, Any, Optional
 from services.location.location_service import location_service
+from services.cache.cache_service import cache_service
 
-# In-memory cache: {cache_key: (timestamp, data)}
-_WEATHER_CACHE: Dict[str, tuple[float, Dict[str, Any]]] = {}
 CACHE_TTL_SECONDS = 900  # 15 minutes
 
 
@@ -140,11 +139,9 @@ class WeatherService:
         Tries OpenWeatherMap Live API, falls back to Open-Meteo Live API, then local simulator if all fail.
         """
         cache_key = f"curr_{self._get_cache_key(lat, lon)}"
-        now = time.time()
-        if cache_key in _WEATHER_CACHE:
-            ts, data = _WEATHER_CACHE[cache_key]
-            if now - ts < CACHE_TTL_SECONDS:
-                return data
+        cached_val = cache_service.get(cache_key)
+        if cached_val is not None:
+            return cached_val
 
         # 1. If live API key is present, attempt real OpenWeatherMap HTTP fetch
         if self.api_key and len(self.api_key.strip()) > 8:
@@ -173,7 +170,7 @@ class WeatherService:
                         }
                         result["location"] = await location_service.reverse_geocode(lat, lon)
                         result["location_name"] = result["location"].get("formatted_location")
-                        _WEATHER_CACHE[cache_key] = (now, result)
+                        cache_service.set(cache_key, result, ttl_seconds=CACHE_TTL_SECONDS)
                         return result
             except Exception as e:
                 print(f"[WeatherService] OpenWeatherMap call failed: {e}")
@@ -183,7 +180,7 @@ class WeatherService:
         if om_result:
             om_result["location"] = await location_service.reverse_geocode(lat, lon)
             om_result["location_name"] = om_result["location"].get("formatted_location")
-            _WEATHER_CACHE[cache_key] = (now, om_result)
+            cache_service.set(cache_key, om_result, ttl_seconds=CACHE_TTL_SECONDS)
             return om_result
 
         # 3. Local development fallback (explicitly badged if offline)
@@ -207,7 +204,7 @@ class WeatherService:
             "location": geo_fallback,
             "location_name": geo_fallback.get("formatted_location")
         }
-        _WEATHER_CACHE[cache_key] = (now, fallback_data)
+        cache_service.set(cache_key, fallback_data, ttl_seconds=CACHE_TTL_SECONDS)
         return fallback_data
 
     async def get_forecast(self, lat: float = 12.97, lon: float = 77.59) -> Dict[str, Any]:
@@ -216,11 +213,9 @@ class WeatherService:
         Tries OpenWeatherMap Live API, falls back to Open-Meteo Live API, then local simulator.
         """
         cache_key = f"fc_{self._get_cache_key(lat, lon)}"
-        now = time.time()
-        if cache_key in _WEATHER_CACHE:
-            ts, data = _WEATHER_CACHE[cache_key]
-            if now - ts < CACHE_TTL_SECONDS:
-                return data
+        cached_fc = cache_service.get(cache_key)
+        if cached_fc is not None:
+            return cached_fc
 
         # 1. Try OpenWeatherMap Live API
         if self.api_key and len(self.api_key.strip()) > 8:
@@ -260,7 +255,7 @@ class WeatherService:
                             "rain_48h_mm": round(rain_48h, 1),
                             "forecast_days": days_list,
                         }
-                        _WEATHER_CACHE[cache_key] = (now, result)
+                        cache_service.set(cache_key, result, ttl_seconds=CACHE_TTL_SECONDS)
                         return result
             except Exception as e:
                 print(f"[WeatherService] OpenWeatherMap forecast error: {e}")
@@ -268,7 +263,7 @@ class WeatherService:
         # 2. Live Open-Meteo API fallback (No key required, always real-time)
         om_forecast = await self._fetch_open_meteo_forecast(lat, lon)
         if om_forecast:
-            _WEATHER_CACHE[cache_key] = (now, om_forecast)
+            cache_service.set(cache_key, om_forecast, ttl_seconds=CACHE_TTL_SECONDS)
             return om_forecast
 
         # 3. Local development fallback forecast with realistic agricultural patterns
@@ -286,7 +281,7 @@ class WeatherService:
             "rain_48h_mm": 8.0,
             "forecast_days": days_fallback
         }
-        _WEATHER_CACHE[cache_key] = (now, fallback_data)
+        cache_service.set(cache_key, fallback_data, ttl_seconds=CACHE_TTL_SECONDS)
         return fallback_data
 
 

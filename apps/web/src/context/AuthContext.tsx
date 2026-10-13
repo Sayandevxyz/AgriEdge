@@ -55,8 +55,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           id: data.user_id,
           email: `${role.toLowerCase()}@agriedge.internal`,
           full_name: data.full_name,
-          role: data.role as UserRole,
+          role: role,
           language_preference: data.language_preference || 'en',
+          consent_given: true,
+          consent_version: 'dpdp-v1.0'
         };
         login(data.access_token, userData, data.refresh_token);
       }

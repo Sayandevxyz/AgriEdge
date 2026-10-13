@@ -13,12 +13,14 @@ class UserRegisterRequest(BaseModel):
     password: str = Field(min_length=8)
     full_name: str
     phone_number: Optional[str] = None
-    language_preference: str = "en"
+    language_preference: str = Field("en", description="Supported languages: en, hi, ta")
     village: Optional[str] = None
     district: Optional[str] = None
     state: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    consent_given: bool = True
+    consent_version: Optional[str] = "dpdp-v1.0"
 
     @field_validator("email")
     @classmethod
@@ -89,6 +91,17 @@ class TokenResponse(BaseModel):
     full_name: str
     role: str
     language_preference: str
+    consent_given: bool = False
+
+
+class ConsentUpdateRequest(BaseModel):
+    consent_given: bool = True
+    consent_version: str = "dpdp-v1.0"
+
+
+class FeedbackCurateRequest(BaseModel):
+    approved: bool = True
+    notes: Optional[str] = None
 
 
 # Farm & Onboarding Schemas
@@ -170,6 +183,12 @@ class FeedbackSubmitRequest(BaseModel):
     crop_condition: str = "Improved"
     yield_outcome_kg: Optional[float] = None
     farmer_comment: Optional[str] = None
+
+
+class FeedbackCurateRequest(BaseModel):
+    curated: bool = True
+    approved: Optional[bool] = None
+    notes: Optional[str] = None
 
 
 # Structured Error Response

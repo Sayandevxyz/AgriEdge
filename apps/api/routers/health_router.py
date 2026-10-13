@@ -10,6 +10,8 @@ from apps.api.config import settings
 from apps.api.database import engine
 from services.admin.observability_service import observability_service
 
+from services.cache.cache_service import cache_service
+
 router = APIRouter(tags=["Health"])
 
 
@@ -35,29 +37,7 @@ def check_db_health():
 
 
 def check_redis_health():
-    try:
-        import redis
-        client = redis.from_url(settings.REDIS_URL, socket_connect_timeout=0.5, socket_timeout=0.5)
-        if client.ping():
-            return {
-                "status": "HEALTHY",
-                "cache_tier": "Redis (Live)",
-                "connected": True
-            }
-        else:
-            return {
-                "status": "DEGRADED",
-                "cache_tier": "In-Memory Fallback Active",
-                "connected": False,
-                "detail": "Redis ping failed"
-            }
-    except Exception:
-        return {
-            "status": "DEGRADED",
-            "cache_tier": "In-Memory Fallback Active",
-            "connected": False,
-            "detail": "Redis unavailable; running in-memory cache"
-        }
+    return cache_service.check_health()
 
 
 @router.get("/health")
@@ -76,6 +56,7 @@ def health_check():
     base_health["status"] = overall_status
     base_health["components"]["database"] = db_status
     base_health["components"]["redis_cache"] = redis_status
+    base_health["cache"] = redis_status
     return base_health
 
 

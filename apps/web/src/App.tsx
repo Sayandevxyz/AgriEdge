@@ -21,6 +21,7 @@ const FarmerWeatherPage = lazy(() => import('./pages/farmer/FarmerWeatherPage').
 const FarmerHistoryPage = lazy(() => import('./pages/farmer/FarmerHistoryPage').then(m => ({ default: m.FarmerHistoryPage })));
 const FPODashboard = lazy(() => import('./pages/fpo/FPODashboard').then(m => ({ default: m.FPODashboard })));
 const AdminSystemPage = lazy(() => import('./pages/admin/AdminSystemPage').then(m => ({ default: m.AdminSystemPage })));
+const PrivacyPage = lazy(() => import('./pages/PrivacyPage').then(m => ({ default: m.PrivacyPage })));
 
 const queryClient = new QueryClient();
 
@@ -92,6 +93,7 @@ export const App: React.FC = () => {
                       <Route path="/login" element={<LoginPage />} />
                       <Route path="/signup" element={<SignupPage />} />
                       <Route path="/landing" element={<LandingPage />} />
+                      <Route path="/privacy" element={<PrivacyPage />} />
                       
                       {/* Farmer Journeys (Item 11: FARMER-only) */}
                       <Route

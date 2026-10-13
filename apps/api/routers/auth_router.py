@@ -3,6 +3,7 @@ AgriEdge Authentication Router
 Handles registration, login, JWT token issuance, token refresh, and Judge / Demo mode quick login.
 """
 
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 import jwt
@@ -15,7 +16,8 @@ from apps.api.schemas import (
     UserLoginRequest,
     RefreshTokenRequest,
     TokenResponse,
-    StandardAPIResponse
+    StandardAPIResponse,
+    ConsentUpdateRequest
 )
 from apps.api.auth import (
     hash_password,
@@ -56,7 +58,10 @@ def register_user(req: UserRegisterRequest, db: Session = Depends(get_db)):
         full_name=req.full_name,
         phone_number=req.phone_number,
         role="FARMER",
-        language_preference=req.language_preference
+        language_preference=req.language_preference,
+        consent_given=req.consent_given,
+        consent_timestamp=datetime.now(timezone.utc) if req.consent_given else None,
+        consent_version=req.consent_version or "dpdp-v1.0"
     )
     db.add(user)
     db.commit()
@@ -87,7 +92,8 @@ def register_user(req: UserRegisterRequest, db: Session = Depends(get_db)):
         user_id=user.id,
         full_name=user.full_name,
         role=user.role,
-        language_preference=user.language_preference
+        language_preference=user.language_preference,
+        consent_given=user.consent_given
     )
 
 
@@ -146,7 +152,8 @@ def admin_create_user(req: AdminUserCreateRequest, db: Session = Depends(get_db)
         user_id=user.id,
         full_name=user.full_name,
         role=user.role,
-        language_preference=user.language_preference
+        language_preference=user.language_preference,
+        consent_given=user.consent_given
     )
 
 
@@ -171,7 +178,8 @@ def login_user(req: UserLoginRequest, db: Session = Depends(get_db)):
         user_id=user.id,
         full_name=user.full_name,
         role=user.role,
-        language_preference=user.language_preference
+        language_preference=user.language_preference,
+        consent_given=user.consent_given
     )
 
 
@@ -217,7 +225,8 @@ def refresh_token(req: RefreshTokenRequest, db: Session = Depends(get_db)):
         user_id=user.id,
         full_name=user.full_name,
         role=user.role,
-        language_preference=user.language_preference
+        language_preference=user.language_preference,
+        consent_given=user.consent_given
     )
 
 
@@ -327,8 +336,31 @@ def demo_login(role: str, db: Session = Depends(get_db)):
         user_id=user.id,
         full_name=user.full_name,
         role=user.role,
-        language_preference=user.language_preference
+        language_preference=user.language_preference,
+        consent_given=user.consent_given
     )
+
+
+@router.post("/consent")
+def update_user_consent(
+    req: ConsentUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Updates or confirms DPDP-compliant user consent for telemetry and image processing.
+    """
+    current_user.consent_given = req.consent_given
+    current_user.consent_timestamp = datetime.now(timezone.utc) if req.consent_given else None
+    current_user.consent_version = req.consent_version
+    db.commit()
+    db.refresh(current_user)
+    return {
+        "status": "SUCCESS",
+        "consent_given": current_user.consent_given,
+        "consent_timestamp": current_user.consent_timestamp,
+        "consent_version": current_user.consent_version
+    }
 
 
 @router.get("/config")

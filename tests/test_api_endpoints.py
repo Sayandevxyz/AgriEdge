@@ -305,10 +305,16 @@ def test_rate_limit_and_oversized_upload(client):
         limiter.reset()
 
     # Oversized upload test (> 10MB)
+    farmer_login = client.post("/api/v1/auth/login", json={
+        "email": "ramesh.farmer@agriedge.internal",
+        "password": "agriedge2026"
+    })
+    f_headers = {"Authorization": f"Bearer {farmer_login.json()['access_token']}"}
     large_payload = b"0" * (10 * 1024 * 1024 + 1024)  # 10MB + 1KB
     upload_res = client.post(
         "/api/v1/vision/detect-crop",
-        files={"file": ("large_leaf.jpg", large_payload, "image/jpeg")}
+        files={"file": ("large_leaf.jpg", large_payload, "image/jpeg")},
+        headers=f_headers
     )
     assert upload_res.status_code in [413, 400], f"Expected 413 or 400 for >10MB upload, got {upload_res.status_code}"
 
@@ -568,5 +574,166 @@ def test_cors_preflight_and_origins(client):
         }
     )
     assert res_disallowed.status_code == 400
+
+
+def test_dpdp_consent_blocks_vision_upload(client):
+    """Verify DPDP consent gate blocks vision upload until consent is recorded."""
+    from PIL import Image
+    import io
+    unique_email = f"noconsent_{uuid.uuid4().hex[:8]}@agriedge.io"
+    reg = client.post("/api/v1/auth/register", json={
+        "email": unique_email,
+        "password": "Password123",
+        "full_name": "No Consent Farmer",
+        "phone_number": "+91 91234 56789",
+        "village": "Mandya",
+        "district": "Mandya",
+        "consent_given": False
+    })
+    assert reg.status_code in [200, 201]
+    token = reg.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Attempt vision crop detection without consent -> 403 Forbidden
+    files = {"file": ("leaf.jpg", b"fake_leaf_image_bytes", "image/jpeg")}
+    res = client.post("/api/v1/vision/detect-crop", files=files, headers=headers)
+    assert res.status_code == 403
+    assert "consent" in res.text.lower()
+
+    # Now record DPDP consent
+    consent_res = client.post("/api/v1/auth/consent", json={"consent_version": "dpdp-v1.0"}, headers=headers)
+    assert consent_res.status_code == 200
+    assert consent_res.json()["consent_given"] is True
+
+    # Now vision crop detection is unblocked
+    img = Image.new("RGB", (100, 100), color=(0, 200, 0))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    files2 = {"file": ("leaf.jpg", buf.getvalue(), "image/jpeg")}
+    res2 = client.post("/api/v1/vision/detect-crop", files=files2, headers=headers)
+    assert res2.status_code == 200
+    assert res2.json()["requires_agronomist_verification"] is True
+
+
+def test_feedback_curation_authorization(client):
+    """Verify only AGRONOMIST/FPO_ADMIN can curate feedback; farmer receives 403."""
+    # 1. Login as farmer
+    f_login = client.post("/api/v1/auth/login", json={
+        "email": "ramesh.farmer@agriedge.internal",
+        "password": "agriedge2026"
+    })
+    farmer_token = f_login.json()["access_token"]
+    farmer_headers = {"Authorization": f"Bearer {farmer_token}"}
+
+    # 2. Login as FPO admin
+    fpo_login = client.post("/api/v1/auth/login", json={
+        "email": "admin.cauveryfpo@agriedge.internal",
+        "password": "agriedge2026"
+    })
+    fpo_token = fpo_login.json()["access_token"]
+    fpo_headers = {"Authorization": f"Bearer {fpo_token}"}
+
+    # Submit feedback as farmer
+    fb_res = client.post("/api/v1/feedback", json={
+        "advisory_id": "test_adv_123",
+        "predicted_action": "APPLY IRRIGATION",
+        "action_taken": "APPLY IRRIGATION",
+        "water_used_litres": 1500,
+        "predicted_water_litres": 1600,
+        "crop_condition": "Improved",
+        "farmer_comment": "Excellent result following advisory advice closely over two weeks."
+    }, headers=farmer_headers)
+    assert fb_res.status_code == 200
+    fb_data = fb_res.json()
+    fb_uuid = fb_data["feedback_id"]
+
+    # Verify length heuristic did NOT set curated_for_retraining
+    assert fb_data["evaluation"]["curated_for_retraining_pool"] is False
+
+    # Farmer attempts to curate -> 403 Forbidden
+    curate_fail = client.patch(f"/api/v1/feedback/{fb_uuid}/curate", json={
+        "approved": True,
+        "notes": "Farmer trying to curate self"
+    }, headers=farmer_headers)
+    assert curate_fail.status_code == 403
+
+    # FPO admin curates -> 200 OK
+    curate_success = client.patch(f"/api/v1/feedback/{fb_uuid}/curate", json={
+        "approved": True,
+        "notes": "Verified by Agronomist Dr. Shivakumar"
+    }, headers=fpo_headers)
+    assert curate_success.status_code == 200
+    curate_data = curate_success.json()
+    assert curate_data["curated_for_retraining"] is True
+    assert "admin.cauveryfpo@agriedge.internal" in curate_data["curated_by"]
+
+
+def test_fpo_dashboard_db_kpis_and_demo_flag(client):
+    """Verify FPO dashboard computes real DB KPIs and supports demo=true flag."""
+    fpo_login = client.post("/api/v1/auth/login", json={
+        "email": "admin.cauveryfpo@agriedge.internal",
+        "password": "agriedge2026"
+    })
+    fpo_token = fpo_login.json()["access_token"]
+    fpo_headers = {"Authorization": f"Bearer {fpo_token}"}
+
+    # 1. Real DB metrics
+    real_res = client.get("/api/v1/fpo/dashboard", headers=fpo_headers)
+    assert real_res.status_code == 200
+    real_data = real_res.json()
+    assert real_data["is_demo"] is False
+    assert "kpi_metrics" in real_data
+    assert "total_registered_farmers" in real_data["kpi_metrics"]
+    assert "total_acreage_under_management" in real_data["kpi_metrics"]
+    assert "total_advisories_generated" in real_data["kpi_metrics"]
+    assert "crop_distribution" in real_data
+    assert "disease_breakdown" in real_data
+
+    # Disease hotspots endpoint aggregates to district level
+    hotspots_res = client.get("/api/v1/fpo/disease-map", headers=fpo_headers)
+    assert hotspots_res.status_code == 200
+    assert isinstance(hotspots_res.json(), list)
+
+    # 2. Demo data with demo=true
+    demo_res = client.get("/api/v1/fpo/dashboard?demo=true", headers=fpo_headers)
+    assert demo_res.status_code == 200
+    demo_data = demo_res.json()
+    assert demo_data["is_demo"] is True
+    assert demo_data["badge"] == "Demo data"
+
+
+def test_health_reports_cache_backend(client):
+    """Verify /health honestly reports real cache backend."""
+    res = client.get("/health")
+    assert res.status_code == 200
+    data = res.json()
+    assert "cache" in data
+    assert data["cache"]["backend"] in ["redis", "memory", "memory_fallback"]
+
+
+def test_scenario_simulator_claimed_scenarios(client):
+    """Verify scenario simulator implements the 4 claimed scenarios."""
+    farmer_login = client.post("/api/v1/auth/login", json={
+        "email": "ramesh.farmer@agriedge.internal",
+        "password": "agriedge2026"
+    })
+    token = farmer_login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    sim_res = client.post("/api/v1/scenario/simulate", json={
+        "crop": "Tomato",
+        "growth_stage": "flowering",
+        "farm_acres": 2.0
+    }, headers=headers)
+    assert sim_res.status_code == 200
+    data = sim_res.json()
+    assert "scenarios" in data
+    scenario_ids = [s["id"] for s in data["scenarios"]]
+    # Verify the 4 claimed scenarios exist:
+    assert "heatwave_stress" in scenario_ids  # heatwave: ET0 +20%
+    assert "drought_7d" in scenario_ids        # drought: zero rain 7 days
+    assert "power_outage_diesel" in scenario_ids  # diesel pump fallback
+    assert "solar_pump_conversion" in scenario_ids # electric->solar pump conversion
+
 
 

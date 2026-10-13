@@ -13,6 +13,7 @@ import httpx
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List
 from services.location.location_service import location_service
+from services.cache.cache_service import cache_service
 
 
 class ColdStorageProvider(ABC):
@@ -145,6 +146,11 @@ class MarketAgent:
                 resolved_state = resolved_state or "Tamil Nadu"
 
         crop_clean = crop.lower().strip()
+        cache_key = f"market:{crop_clean}:{resolved_district}:{resolved_state}:{market or ''}"
+        cached_result = cache_service.get(cache_key)
+        if cached_result:
+            return cached_result
+
         matched_crop = "tomato"
         for k in CROP_MARKET_BENCHMARKS.keys():
             if k in crop_clean:
@@ -170,6 +176,7 @@ class MarketAgent:
             llm_data["is_realtime"] = True
             llm_data["timestamp"] = time.time()
             llm_data["post_harvest_advice"] = self._get_post_harvest_advice(crop)
+            cache_service.set(cache_key, llm_data, ttl_seconds=300)
             return llm_data
 
         # Robust dynamic real-time market calculation based on seasonal day-of-year
@@ -230,7 +237,7 @@ class MarketAgent:
                 "Grading and sorting into 'Grade-A' before auction will yield a 12-15% premium."
             )
 
-        return {
+        result = {
             "crop": crop.capitalize(),
             "market": mandi_name,
             "district": resolved_district,
@@ -251,6 +258,8 @@ class MarketAgent:
             "mandi_arbitrage": mandi_arbitrage,
             "post_harvest_advice": self._get_post_harvest_advice(crop)
         }
+        cache_service.set(cache_key, result, ttl_seconds=300)
+        return result
 
     async def _synthesize_live_market_intelligence(
         self,

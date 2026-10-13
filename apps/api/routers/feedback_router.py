@@ -7,8 +7,8 @@ and logs validated outcomes for continuous model improvement.
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from apps.api.database import get_db
-from apps.api.models import User, Feedback, Advisory, Farm, FarmerProfile
-from apps.api.schemas import FeedbackSubmitRequest
+from apps.api.models import User, Feedback, Advisory, Farm, FarmerProfile, utc_now
+from apps.api.schemas import FeedbackSubmitRequest, FeedbackCurateRequest
 from apps.api.auth import get_current_user
 from services.feedback.feedback_service import feedback_service
 
@@ -36,6 +36,8 @@ def submit_farmer_feedback(
     result = feedback_service.record_feedback(req.model_dump())
     
     # Store feedback record in database
+    # Curation for retraining is NEVER done automatically via length heuristics.
+    # It must be approved explicitly by AGRONOMIST or FPO_ADMIN via PATCH /feedback/{id}/curate.
     db_feedback = Feedback(
         feedback_uuid=result["feedback_id"],
         advisory_uuid=req.advisory_id,
@@ -45,12 +47,60 @@ def submit_farmer_feedback(
         crop_condition_after=req.crop_condition,
         yield_outcome_kg=req.yield_outcome_kg,
         farmer_comment=req.farmer_comment,
-        curated_for_retraining=result["evaluation"]["curated_for_retraining_pool"]
+        curated_for_retraining=False
     )
     db.add(db_feedback)
     db.commit()
 
     return result
+
+
+@router.patch("/feedback/{feedback_id}/curate")
+def curate_feedback(
+    feedback_id: str,
+    req: FeedbackCurateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Curate feedback for continuous model retraining.
+    Protected endpoint: Only AGRONOMIST, FPO_ADMIN, or SYSTEM_ADMIN can approve feedback curation.
+    """
+    if current_user.role not in ["AGRONOMIST", "FPO_ADMIN", "SYSTEM_ADMIN"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "FORBIDDEN", "message": "Only an agronomist or FPO admin can approve feedback for model retraining."}
+        )
+
+    # Allow lookup by integer id or feedback_uuid
+    query = db.query(Feedback)
+    if feedback_id.isdigit():
+        fb = query.filter((Feedback.id == int(feedback_id)) | (Feedback.feedback_uuid == feedback_id)).first()
+    else:
+        fb = query.filter(Feedback.feedback_uuid == feedback_id).first()
+
+    if not fb:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feedback record not found")
+
+    is_approved = req.approved if req.approved is not None else req.curated
+    fb.curated_for_retraining = is_approved
+    fb.curated_by = current_user.email
+    fb.curation_notes = req.notes
+    fb.curated_at = utc_now()
+    db.commit()
+    db.refresh(fb)
+
+    return {
+        "success": True,
+        "feedback_id": fb.feedback_uuid,
+        "id": fb.id,
+        "curated_for_retraining": fb.curated_for_retraining,
+        "curated_by": fb.curated_by,
+        "curation_notes": fb.curation_notes,
+        "curated_at": fb.curated_at.isoformat() if fb.curated_at else None,
+        "message": "Feedback successfully curated for model retraining pool."
+    }
+
 
 
 @router.post("/outcomes")

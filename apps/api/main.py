@@ -33,6 +33,23 @@ async def lifespan(app: FastAPI):
     # 1. Create all database tables on configured engine (PostgreSQL / SQLite)
     Base.metadata.create_all(bind=engine)
 
+    # 1b. Non-destructive column additions for existing local SQLite databases
+    with engine.connect() as conn:
+        from sqlalchemy import text
+        for col_stmt in [
+            "ALTER TABLE users ADD COLUMN consent_given BOOLEAN DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN consent_timestamp DATETIME",
+            "ALTER TABLE users ADD COLUMN consent_version VARCHAR(20)",
+            "ALTER TABLE feedbacks ADD COLUMN curated_by VARCHAR(120)",
+            "ALTER TABLE feedbacks ADD COLUMN curation_notes TEXT",
+            "ALTER TABLE feedbacks ADD COLUMN curated_at DATETIME"
+        ]:
+            try:
+                conn.execute(text(col_stmt))
+                conn.commit()
+            except Exception:
+                pass
+
     # 2. Seed development records ONLY when APP_MODE == "development" (in production seed nothing)
     if settings.APP_MODE == "development":
         db = SessionLocal()
@@ -61,7 +78,9 @@ async def lifespan(app: FastAPI):
                     full_name="Ramesh Gowda",
                     phone_number="+91 98450 12345",
                     role="FARMER",
-                    language_preference="en"
+                    language_preference="en",
+                    consent_given=True,
+                    consent_version="dpdp-v1.0"
                 )
                 db.add(farmer_user)
 
@@ -72,7 +91,9 @@ async def lifespan(app: FastAPI):
                     full_name="Dr. H. M. Shivakumar (FPO Agronomist)",
                     phone_number="+91 94480 54321",
                     role="FPO_ADMIN",
-                    language_preference="en"
+                    language_preference="en",
+                    consent_given=True,
+                    consent_version="dpdp-v1.0"
                 )
                 db.add(fpo_user)
 
@@ -83,7 +104,9 @@ async def lifespan(app: FastAPI):
                     full_name="System Administrator",
                     phone_number="+91 90000 00000",
                     role="SYSTEM_ADMIN",
-                    language_preference="en"
+                    language_preference="en",
+                    consent_given=True,
+                    consent_version="dpdp-v1.0"
                 )
                 db.add(admin_user)
                 db.commit()

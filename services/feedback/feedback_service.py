@@ -58,8 +58,8 @@ class OutcomeAgent:
         success_rating = "HIGH" if score >= 85 else ("MODERATE" if score >= 60 else "LOW")
 
         # Curation for Model Continuous Improvement:
-        # High quality samples require clear condition feedback and reasonable variance
-        is_curated_for_evaluation = score >= 80 and bool(farmer_comment and len(farmer_comment) > 5)
+        # Replaced length-based heuristic: curation requires agronomist or FPO admin approval
+        is_curated_for_evaluation = False
 
         evaluation = {
             "evaluation_id": f"eval_{uuid.uuid4().hex[:8]}",
@@ -71,8 +71,8 @@ class OutcomeAgent:
             "success_rating": success_rating,
             "water_variance_pct": water_variance_pct,
             "energy_variance_pct": energy_variance_pct,
-            "curated_for_retraining_pool": is_curated_for_evaluation,
-            "validation_status": "FLAGGED_FOR_AGRONOMIST_VERIFICATION" if is_curated_for_evaluation else "LOGGED"
+            "curated_for_retraining_pool": False,
+            "validation_status": "PENDING_AGRONOMIST_CURATION"
         }
 
         _OUTCOME_EVALUATIONS.append(evaluation)

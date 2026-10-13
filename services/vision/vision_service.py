@@ -192,125 +192,109 @@ class CropClassifier:
 
         is_field_landscape = False
 
-        # 1. Filename / Sample Clues
-        hint_lower = (filename_hint or "").lower()
-        if "chilli" in hint_lower or "pepper" in hint_lower:
-            matched_key = "chilli"
-            conf = 0.96
-        elif "rice" in hint_lower or "paddy" in hint_lower:
-            matched_key = "rice"
-            conf = 0.96
-        elif "cotton" in hint_lower:
-            matched_key = "cotton"
-            conf = 0.95
-        elif "wheat" in hint_lower:
-            matched_key = "wheat"
-            conf = 0.94
-        elif "maize" in hint_lower or "corn" in hint_lower:
-            matched_key = "maize"
-            conf = 0.95
-        elif "tomato" in hint_lower:
-            matched_key = "tomato"
-            conf = 0.96
+        # Image Content-Based Morphological, canopy, and spectral feature extraction
+        # (Filename clues are strictly excluded from crop classification)
+        top_h = max(5, int(height * 0.35))
+        top_pixels = img_np[:top_h, :, :]
+        bottom_pixels = img_np[top_h:, :, :]
+
+        top_r_mean = float(np.mean(top_pixels[:, :, 0]))
+        top_g_mean = float(np.mean(top_pixels[:, :, 1]))
+        top_b_mean = float(np.mean(top_pixels[:, :, 2]))
+        top_brightness = (top_r_mean + top_g_mean + top_b_mean) / 3.0
+
+        # Sky condition: high brightness in top third, non-green dominant (sunset, daylight, horizon)
+        is_sky_present = (top_brightness > 115.0) and (top_g_mean < max(top_r_mean, top_b_mean) * 1.30)
+
+        # Vegetation in bottom section
+        bot_g_mean = float(np.mean(bottom_pixels[:, :, 1]))
+        bot_r_mean = float(np.mean(bottom_pixels[:, :, 0]))
+        bot_b_mean = float(np.mean(bottom_pixels[:, :, 2]))
+        bot_green_dom = bot_g_mean / (bot_r_mean + bot_b_mean + 1e-5)
+
+        is_field_landscape = is_sky_present and (bot_green_dom > 0.60)
+
+        # Leaf mask where vegetation exists
+        leaf_mask = (g > 35) & ((g > r * 0.90) | (g > b * 0.90))
+        y_indices, x_indices = np.where(leaf_mask)
+
+        if len(y_indices) > 100:
+            h_span = max(1, int(np.max(y_indices) - np.min(y_indices)))
+            w_span = max(1, int(np.max(x_indices) - np.min(x_indices)))
+            aspect_ratio = max(h_span, w_span) / max(1, min(h_span, w_span))
+            area_ratio = len(y_indices) / float(width * height)
         else:
-            # 2. Morphological, canopy, and spectral feature extraction
-            # Check for outdoor field / landscape horizon (e.g. corn/maize field, wheat field, paddy field)
-            top_h = max(5, int(height * 0.35))
-            top_pixels = img_np[:top_h, :, :]
-            bottom_pixels = img_np[top_h:, :, :]
+            aspect_ratio = max(height, width) / max(1, min(height, width))
+            area_ratio = 0.5
 
-            top_r_mean = float(np.mean(top_pixels[:, :, 0]))
-            top_g_mean = float(np.mean(top_pixels[:, :, 1]))
-            top_b_mean = float(np.mean(top_pixels[:, :, 2]))
-            top_brightness = (top_r_mean + top_g_mean + top_b_mean) / 3.0
+        # Edge roughness (Laplacian on green channel)
+        padded = np.pad(g, 1, mode='edge')
+        laplacian = (
+            padded[1:-1, 2:] + padded[1:-1, :-2] +
+            padded[2:, 1:-1] + padded[:-2, 1:-1] -
+            4 * padded[1:-1, 1:-1]
+        )
+        roughness = float(np.var(laplacian))
 
-            # Sky condition: high brightness in top third, non-green dominant (sunset, daylight, horizon)
-            is_sky_present = (top_brightness > 115.0) and (top_g_mean < max(top_r_mean, top_b_mean) * 1.30)
+        # Spectral green dominance
+        green_dom = float(np.mean(g) / (np.mean(r) + np.mean(b) + 1e-5))
 
-            # Vegetation in bottom section
-            bot_g_mean = float(np.mean(bottom_pixels[:, :, 1]))
-            bot_r_mean = float(np.mean(bottom_pixels[:, :, 0]))
-            bot_b_mean = float(np.mean(bottom_pixels[:, :, 2]))
-            bot_green_dom = bot_g_mean / (bot_r_mean + bot_b_mean + 1e-5)
+        # Non-crop verification: if foliage pixels are virtually non-existent (< 4% of image)
+        # or green dominance is low, reject as non-crop (e.g. laptop, room, screen, car)
+        foliage_ratio = len(y_indices) / float(width * height)
+        if not is_field_landscape and (foliage_ratio < 0.04 or green_dom < 0.60):
+            return {
+                "is_crop": False,
+                "crop": None,
+                "crop_key": None,
+                "confidence": 0.0,
+                "scientific_name": None,
+                "family": None,
+                "variety_suggestion": None,
+                "default_stage": None,
+                "features_detected": "Non-crop object or screen detected. Insufficient foliage or vegetation detected in the image.",
+                "error_message": "No agricultural crop or leaf detected in the photo. Please capture a clear photo of an actual crop leaf in your field.",
+                "alternatives": [],
+                "requires_agronomist_verification": True,
+                "is_heuristic": True,
+                "badge": "Heuristic mode (no AI key)"
+            }
 
-            is_field_landscape = is_sky_present and (bot_green_dom > 0.60)
-
-            # Leaf mask where vegetation exists
-            leaf_mask = (g > 35) & ((g > r * 0.90) | (g > b * 0.90))
-            y_indices, x_indices = np.where(leaf_mask)
-
-            if len(y_indices) > 100:
-                h_span = max(1, int(np.max(y_indices) - np.min(y_indices)))
-                w_span = max(1, int(np.max(x_indices) - np.min(x_indices)))
-                aspect_ratio = max(h_span, w_span) / max(1, min(h_span, w_span))
-                area_ratio = len(y_indices) / float(width * height)
+        # Classification heuristics based purely on optical morphology
+        if is_field_landscape:
+            # Outdoor crop field canopy
+            matched_key = "maize"
+            conf = 0.60
+        elif aspect_ratio >= 2.4:
+            # Elongated monocot blade -> Rice / Wheat
+            if green_dom > 0.88:
+                matched_key = "rice"
             else:
-                aspect_ratio = max(height, width) / max(1, min(height, width))
-                area_ratio = 0.5
-
-            # Edge roughness (Laplacian on green channel)
-            padded = np.pad(g, 1, mode='edge')
-            laplacian = (
-                padded[1:-1, 2:] + padded[1:-1, :-2] +
-                padded[2:, 1:-1] + padded[:-2, 1:-1] -
-                4 * padded[1:-1, 1:-1]
-            )
-            roughness = float(np.var(laplacian))
-
-            # Spectral green dominance
-            green_dom = float(np.mean(g) / (np.mean(r) + np.mean(b) + 1e-5))
-
-            # Non-crop verification: if foliage pixels are virtually non-existent (< 4% of image)
-            # or green dominance is low, reject as non-crop (e.g. laptop, room, screen, car)
-            foliage_ratio = len(y_indices) / float(width * height)
-            if not is_field_landscape and (foliage_ratio < 0.04 or green_dom < 0.60):
-                return {
-                    "is_crop": False,
-                    "crop": None,
-                    "crop_key": None,
-                    "confidence": 0.0,
-                    "scientific_name": None,
-                    "family": None,
-                    "variety_suggestion": None,
-                    "default_stage": None,
-                    "features_detected": "Non-crop object or screen detected. Insufficient foliage or vegetation detected in the image.",
-                    "error_message": "No agricultural crop or leaf detected in the photo. Please capture a clear photo of an actual crop leaf in your field.",
-                    "alternatives": []
-                }
-
-            # Classification heuristics
-            if is_field_landscape:
-                # Outdoor crop field canopy
-                # Dense tall upright canopy with arching ribbon leaves -> Maize (Zea mays)
+                matched_key = "wheat"
+            conf = 0.60
+        elif roughness > 75.0 and aspect_ratio < 1.7 and green_dom < 0.88:
+            # Serrated compound margins with high texture -> Tomato
+            matched_key = "tomato"
+            conf = 0.60
+        elif green_dom > 0.85 and roughness <= 60.0:
+            # Darker / glossy smooth oval -> Chilli
+            matched_key = "chilli"
+            conf = 0.60
+        elif area_ratio > 0.60 and aspect_ratio < 1.3:
+            # Broad lobed palmate -> Cotton
+            matched_key = "cotton"
+            conf = 0.60
+        else:
+            # Monocot arching foliage / broad foliage check
+            if aspect_ratio > 1.4:
                 matched_key = "maize"
-                conf = 0.94
-            elif aspect_ratio >= 2.4:
-                # Elongated monocot blade -> Rice / Wheat
-                if green_dom > 0.88:
-                    matched_key = "rice"
-                else:
-                    matched_key = "wheat"
-                conf = min(0.95, 0.86 + (aspect_ratio - 2.4) * 0.04)
-            elif roughness > 75.0 and aspect_ratio < 1.7 and green_dom < 0.88:
-                # Serrated compound margins with high texture -> Tomato
-                matched_key = "tomato"
-                conf = 0.92
-            elif green_dom > 0.85 and roughness <= 60.0:
-                # Darker / glossy smooth oval -> Chilli
-                matched_key = "chilli"
-                conf = 0.91
-            elif area_ratio > 0.60 and aspect_ratio < 1.3:
-                # Broad lobed palmate -> Cotton
-                matched_key = "cotton"
-                conf = 0.90
+                conf = 0.60
             else:
-                # Monocot arching foliage / broad foliage check
-                if aspect_ratio > 1.4:
-                    matched_key = "maize"
-                    conf = 0.91
-                else:
-                    matched_key = "tomato"
-                    conf = 0.89
+                matched_key = "tomato"
+                conf = 0.58
+
+        # Cap heuristic confidence strictly at 0.60
+        conf = min(0.60, conf)
 
         meta = CROP_METADATA.get(matched_key, CROP_METADATA["maize" if is_field_landscape else "tomato"])
 
@@ -336,7 +320,11 @@ class CropClassifier:
             "variety_suggestion": meta["variety_suggestion"],
             "default_stage": meta["default_stage"],
             "features_detected": meta["features_detected"] if not is_field_landscape else "Outdoor crop field canopy exhibiting tall vertical stalks and long arching ribbon-like leaf blades characteristic of Maize (Zea mays)",
-            "alternatives": alternatives
+            "alternatives": alternatives,
+            "requires_agronomist_verification": True,
+            "is_heuristic": True,
+            "badge": "Heuristic mode (no AI key)",
+            "source": "Optical Heuristic (Unverified)"
         }
 
 
@@ -457,19 +445,23 @@ class LocalVisionProvider(VisionProvider):
             severity = "None"
             affected_pct = 0.0
 
-        # Agronomist verification recommendation if confidence is below 80%
-        requires_verification = confidence < 0.80
+        # Honest heuristic confidence: cap strictly at 0.60 and mandate agronomist verification
+        confidence = min(0.60, confidence)
+        crop_confidence = min(0.60, crop_confidence)
+        requires_verification = True
 
         return {
             "provider": "LocalVisionProvider (Optical Heuristic & ONNX-Ready)",
             "crop_detected": crop_display,
-            "crop_confidence": crop_confidence,
+            "crop_confidence": round(crop_confidence, 2),
             "disease_detected": disease,
             "confidence": round(confidence, 2),
             "severity": severity,
             "affected_area_pct": affected_pct,
             "visual_explanation": visual_explanation,
             "requires_agronomist_verification": requires_verification,
+            "is_heuristic": True,
+            "badge": "Heuristic mode (no AI key)",
             "color_signature": {
                 "necrotic_ratio": round(necrotic_ratio, 3),
                 "chlorotic_ratio": round(chlorotic_ratio, 3),
@@ -720,13 +712,16 @@ class RemoteVisionProvider(VisionProvider):
                                 "variety_suggestion": parsed.get("variety_suggestion", meta.get("variety_suggestion")),
                                 "default_stage": meta.get("default_stage", "vegetative"),
                                 "features_detected": parsed.get("features_detected", meta.get("features_detected")),
-                                "source": f"Cloud AI Vision ({self.model})"
+                                "source": f"Cloud AI Vision ({self.model})",
+                                "is_heuristic": False,
+                                "badge": None,
+                                "requires_agronomist_verification": bool(parsed.get("requires_agronomist_verification", False))
                             }
             except Exception:
                 pass
 
         # 3. Intelligent Local Classifier (analyzes field landscapes & leaf geometry)
-        return CropClassifier.classify_crop(image_bytes, filename_hint)
+        return CropClassifier.classify_crop(image_bytes)
 
     async def analyze(
         self,
@@ -806,7 +801,9 @@ class RemoteVisionProvider(VisionProvider):
                             "visual_explanation": parsed.get("visual_explanation", ""),
                             "requires_agronomist_verification": bool(parsed.get("requires_agronomist_verification", False)),
                             "recommendation": parsed.get("recommendation", ""),
-                            "source": "Cloud Vision AI"
+                            "source": "Cloud Vision AI",
+                            "is_heuristic": False,
+                            "badge": None
                         }
         except Exception:
             pass

@@ -62,6 +62,8 @@ export const CropAnalysisFlow: React.FC = () => {
     default_stage?: string | null;
     features_detected?: string | null;
     error_message?: string | null;
+    is_heuristic?: boolean;
+    badge?: string;
     alternatives?: Array<{ crop: string; confidence: number }>;
   } | null>(null);
 
@@ -223,6 +225,19 @@ export const CropAnalysisFlow: React.FC = () => {
         }
       } else {
         const errJson = await res.json().catch(() => ({}));
+        if (errJson.detail?.code === 'CONSENT_REQUIRED') {
+          setErrorMsg('DPDP Consent Required: Please provide consent under the DPDP Act before uploading images.');
+          setDetectedCropData({
+            is_crop: false,
+            crop: null,
+            confidence: 0,
+            features_detected: 'Consent required.',
+            error_message: 'Consent under the Digital Personal Data Protection (DPDP) Act is required before uploading or processing crop images.'
+          });
+          setCrop('');
+          return;
+        }
+
         if (errJson.detail?.code === 'NOT_A_CROP_IMAGE') {
           setDetectedCropData({
             is_crop: false,
@@ -235,69 +250,14 @@ export const CropAnalysisFlow: React.FC = () => {
           return;
         }
 
-        // Fallback local identification from filename ONLY if filename explicitly names a crop
-        const fn = file.name.toLowerCase();
-        let fallbackCrop: string | null = null;
-        let fallbackVariety = '';
-        let fallbackFamily = '';
-        let fallbackFeatures = '';
-
-        if (fn.includes('chilli') || fn.includes('pepper')) {
-          fallbackCrop = 'Chilli';
-          fallbackVariety = 'G4 (Bhagya Laxmi)';
-          fallbackFamily = 'Solanaceae';
-          fallbackFeatures = 'Smooth elliptic leaves with dark glossy finish';
-        } else if (fn.includes('rice') || fn.includes('paddy')) {
-          fallbackCrop = 'Rice';
-          fallbackVariety = 'BPT 5204 (Samba Mahsuri)';
-          fallbackFamily = 'Poaceae';
-          fallbackFeatures = 'Elongated linear blade with parallel venation';
-        } else if (fn.includes('wheat')) {
-          fallbackCrop = 'Wheat';
-          fallbackVariety = 'HD-2967';
-          fallbackFamily = 'Poaceae';
-          fallbackFeatures = 'Slender linear leaves with fine parallel veins';
-        } else if (fn.includes('cotton')) {
-          fallbackCrop = 'Cotton';
-          fallbackVariety = 'Bt Cotton (Bollgard II)';
-          fallbackFamily = 'Malvaceae';
-          fallbackFeatures = 'Palmate lobed broad leaf structure';
-        } else if (fn.includes('maize') || fn.includes('corn')) {
-          fallbackCrop = 'Maize';
-          fallbackVariety = 'HQPM-1';
-          fallbackFamily = 'Poaceae';
-          fallbackFeatures = 'Tall upright stalks with arching linear ribbon leaf blades';
-        } else if (fn.includes('tomato')) {
-          fallbackCrop = 'Tomato';
-          fallbackVariety = 'Arka Rakshak (Hybrid)';
-          fallbackFamily = 'Solanaceae';
-          fallbackFeatures = 'Serrated pinnate leaflets with reticulate venation';
-        }
-
-        if (fallbackCrop) {
-          const det = {
-            is_crop: true,
-            crop: fallbackCrop,
-            crop_key: fallbackCrop.toLowerCase(),
-            confidence: 0.94,
-            family: fallbackFamily,
-            variety_suggestion: fallbackVariety,
-            default_stage: 'flowering',
-            features_detected: fallbackFeatures
-          };
-          setDetectedCropData(det);
-          setCrop(fallbackCrop);
-          setVariety(fallbackVariety);
-        } else {
-          setDetectedCropData({
-            is_crop: false,
-            crop: null,
-            confidence: 0,
-            features_detected: 'Non-crop image or unclear object.',
-            error_message: 'No agricultural crop leaf detected in the photo. Please capture a clear photo of an actual crop leaf in your field.'
-          });
-          setCrop('');
-        }
+        setDetectedCropData({
+          is_crop: false,
+          crop: null,
+          confidence: 0,
+          features_detected: 'Image analysis could not verify crop species.',
+          error_message: errJson.detail?.message || 'Crop classification failed. Please upload a clear photo of an actual plant or leaf.'
+        });
+        setCrop('');
       }
     } catch {
       setDetectedCropData({
@@ -305,7 +265,7 @@ export const CropAnalysisFlow: React.FC = () => {
         crop: null,
         confidence: 0,
         features_detected: 'Analyzer connection issue.',
-        error_message: 'Could not connect to AI analyzer. Please check your connection and retry.'
+        error_message: 'Could not connect to analyzer. Please check your connection and retry.'
       });
       setCrop('');
     } finally {
@@ -470,6 +430,26 @@ export const CropAnalysisFlow: React.FC = () => {
             </p>
           </div>
 
+          {/* DPDP Consent Block Banner */}
+          {!user?.consent_given && (
+            <div className="bg-amber-50 border border-amber-300 rounded-3xl p-5 flex items-start gap-3.5 text-amber-900 shadow-sm">
+              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <h4 className="font-black text-sm">DPDP Consent Required</h4>
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  Under the Digital Personal Data Protection (DPDP) Act, recorded consent is required before capturing or processing farm telemetry and crop leaf images.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => navigate('/privacy')}
+                  className="inline-block mt-2 text-xs font-bold text-agri-700 underline hover:text-agri-800"
+                >
+                  Review AgriEdge Privacy Policy & Grant Consent →
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* If No Image Selected: Dual Mobile-Friendly Cards */}
           {!previewUrl ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
@@ -477,17 +457,26 @@ export const CropAnalysisFlow: React.FC = () => {
               {/* Option A: Phone Camera (High-Contrast Green Card) */}
               <button
                 type="button"
+                disabled={!user?.consent_given}
                 onClick={() => openLiveCamera()}
-                className="flex flex-col items-center justify-center p-6 bg-gradient-to-br from-agri-600 to-agri-800 hover:from-agri-700 hover:to-agri-900 text-white rounded-3xl shadow-lg shadow-agri-900/15 transition-all active:scale-[0.98] text-center group border border-agri-500/30"
+                className={`flex flex-col items-center justify-center p-6 rounded-3xl shadow-lg transition-all active:scale-[0.98] text-center group border ${
+                  !user?.consent_given
+                    ? 'bg-slate-200 text-slate-400 border-slate-300 cursor-not-allowed shadow-none'
+                    : 'bg-gradient-to-br from-agri-600 to-agri-800 hover:from-agri-700 hover:to-agri-900 text-white shadow-agri-900/15 border-agri-500/30'
+                }`}
               >
-                <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                  <Camera className="w-8 h-8 text-white" />
+                <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-3 transition-transform ${
+                  !user?.consent_given ? 'bg-slate-300 text-slate-500' : 'bg-white/20 group-hover:scale-110'
+                }`}>
+                  <Camera className="w-8 h-8" />
                 </div>
-                <h3 className="font-extrabold text-lg text-white">Take Photo (Camera)</h3>
-                <p className="text-xs text-agri-100 mt-1">
+                <h3 className="font-extrabold text-lg">Take Photo (Camera)</h3>
+                <p className={`text-xs mt-1 ${!user?.consent_given ? 'text-slate-500' : 'text-agri-100'}`}>
                   Open phone camera to snap a live photo of the leaf
                 </p>
-                <span className="mt-4 px-4 py-1.5 bg-white text-agri-900 text-xs font-bold rounded-full shadow-sm">
+                <span className={`mt-4 px-4 py-1.5 text-xs font-bold rounded-full shadow-sm ${
+                  !user?.consent_given ? 'bg-slate-300 text-slate-600' : 'bg-white text-agri-900'
+                }`}>
                   📸 Open Camera
                 </span>
               </button>
@@ -495,8 +484,13 @@ export const CropAnalysisFlow: React.FC = () => {
               {/* Option B: Gallery / Files Upload Card */}
               <button
                 type="button"
+                disabled={!user?.consent_given}
                 onClick={() => galleryInputRef.current?.click()}
-                className="flex flex-col items-center justify-center p-6 bg-slate-50 hover:bg-slate-100 text-slate-800 rounded-3xl border-2 border-dashed border-slate-300 hover:border-agri-500 transition-all active:scale-[0.98] text-center group"
+                className={`flex flex-col items-center justify-center p-6 rounded-3xl border-2 border-dashed transition-all active:scale-[0.98] text-center group ${
+                  !user?.consent_given
+                    ? 'bg-slate-100 text-slate-400 border-slate-300 cursor-not-allowed'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border-slate-300 hover:border-agri-500'
+                }`}
               >
                 <div className="w-16 h-16 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
                   <ImageIcon className="w-8 h-8" />
@@ -530,6 +524,7 @@ export const CropAnalysisFlow: React.FC = () => {
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
+                  disabled={!user?.consent_given}
                   onClick={() => openLiveCamera()}
                   className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-agri-50 hover:bg-agri-100 text-agri-800 rounded-xl text-xs font-bold border border-agri-200 transition"
                 >
@@ -538,6 +533,7 @@ export const CropAnalysisFlow: React.FC = () => {
                 </button>
                 <button
                   type="button"
+                  disabled={!user?.consent_given}
                   onClick={() => galleryInputRef.current?.click()}
                   className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 transition"
                 >
@@ -621,7 +617,7 @@ export const CropAnalysisFlow: React.FC = () => {
                 <div className="space-y-3">
                   <div className="flex items-start justify-between">
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="bg-emerald-600 text-white text-[11px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
                           <Sparkles className="w-3 h-3" />
                           AI Auto-Detected Crop
@@ -629,6 +625,12 @@ export const CropAnalysisFlow: React.FC = () => {
                         <span className="text-xs font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
                           {Math.round(detectedCropData.confidence * 100)}% Confidence
                         </span>
+                        {(detectedCropData.is_heuristic || detectedCropData.badge) && (
+                          <span className="text-[11px] font-black text-amber-800 bg-amber-100 border border-amber-300 px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-2xs">
+                            <AlertTriangle className="w-3 h-3 text-amber-600" />
+                            Heuristic mode (no AI key)
+                          </span>
+                        )}
                       </div>
                       <h3 className="text-xl font-black text-slate-900 mt-1">
                         {detectedCropData.crop}

@@ -10,6 +10,8 @@ export interface User {
   language_preference: LanguageCode;
   village?: string;
   district?: string;
+  consent_given?: boolean;
+  consent_version?: string;
 }
 
 export interface Farm {

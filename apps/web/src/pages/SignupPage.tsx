@@ -36,6 +36,7 @@ export const SignupPage: React.FC = () => {
   const [latitude, setLatitude] = useState<number | undefined>(undefined);
   const [longitude, setLongitude] = useState<number | undefined>(undefined);
   const [detectingGps, setDetectingGps] = useState<boolean>(false);
+  const [consentGiven, setConsentGiven] = useState<boolean>(true);
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -104,6 +105,11 @@ export const SignupPage: React.FC = () => {
       return;
     }
 
+    if (!consentGiven) {
+      setErrorMsg('DPDP Consent Required: Please consent to farm telemetry processing under the DPDP Act.');
+      return;
+    }
+
     setSubmitting(true);
     try {
       const res = await apiFetch('/api/v1/auth/register', {
@@ -118,7 +124,9 @@ export const SignupPage: React.FC = () => {
           village: village.trim() || undefined,
           district: district.trim() || undefined,
           latitude,
-          longitude
+          longitude,
+          consent_given: consentGiven,
+          consent_version: 'dpdp-v1.0'
         })
       });
 
@@ -132,7 +140,9 @@ export const SignupPage: React.FC = () => {
             email: email.trim().toLowerCase(),
             full_name: data.full_name,
             role: data.role as UserRole,
-            language_preference: data.language_preference || selectedLanguage
+            language_preference: data.language_preference || selectedLanguage,
+            consent_given: data.consent_given ?? consentGiven,
+            consent_version: 'dpdp-v1.0'
           },
           data.refresh_token
         );
@@ -343,10 +353,31 @@ export const SignupPage: React.FC = () => {
             </div>
           </div>
 
+          {/* DPDP Consent Step */}
+          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
+            <label className="flex items-start gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                required
+                checked={consentGiven}
+                onChange={(e) => setConsentGiven(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded text-agri-600 focus:ring-agri-500 border-slate-300"
+              />
+              <span className="text-[11px] text-slate-700 leading-relaxed">
+                I consent to the collection and processing of my farm telemetry, location data, and leaf images under the <strong>Digital Personal Data Protection (DPDP) Act</strong> (Version dpdp-v1.0).{' '}
+                <Link to="/privacy" target="_blank" className="text-agri-700 underline font-semibold hover:text-agri-800">
+                  Read Privacy Policy
+                </Link>
+              </span>
+            </label>
+          </div>
+
           <button
             type="submit"
-            disabled={submitting}
-            className="w-full flex items-center justify-center gap-2 bg-agri-700 hover:bg-agri-800 text-white font-bold py-3.5 rounded-2xl shadow transition text-sm mt-2"
+            disabled={submitting || !consentGiven}
+            className={`w-full flex items-center justify-center gap-2 text-white font-bold py-3.5 rounded-2xl shadow transition text-sm mt-2 ${
+              !consentGiven ? 'bg-slate-400 cursor-not-allowed' : 'bg-agri-700 hover:bg-agri-800'
+            }`}
           >
             {submitting ? 'Creating Account...' : 'Sign Up as Farmer'}
             <ArrowRight className="w-4 h-4" />

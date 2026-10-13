@@ -89,11 +89,18 @@ export const FPODashboard: React.FC = () => {
               <Building2 className="w-5 h-5 text-agri-700" />
             </span>
             <div>
-              <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-                {fpoData?.fpo_name || 'Cauvery Basin Farmer Producer Organization'}
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+                  {fpoData?.fpo_name || 'Cauvery Basin Farmer Producer Organization'}
+                </h1>
+                {fpoData?.is_demo && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-extrabold uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-300 px-2.5 py-0.5 rounded-full shadow-sm">
+                    <AlertTriangle className="w-3 h-3 text-amber-600" /> Demo data
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-slate-500">
-                {fpoData?.jurisdiction || 'Mandya & Ramanagara Districts, Karnataka'} • FPO ID: FPO_KA_01
+                {fpoData?.jurisdiction || 'Mandya & Ramanagara Districts, Karnataka'} • FPO ID: {fpoData?.fpo_id || 'FPO_KA_01'}
               </p>
             </div>
           </div>
@@ -117,6 +124,24 @@ export const FPODashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* Empty State Banner */}
+      {fpoData?.empty_state && (
+        <div className="bg-sky-50 border border-sky-200 rounded-3xl p-6 text-sky-900 flex items-start gap-4 shadow-sm">
+          <div className="p-3 bg-sky-100 rounded-2xl text-sky-700">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="text-base font-black text-sky-950">Empty State: No Live Data Found</h3>
+            <p className="text-xs text-sky-800 mt-1">
+              {fpoData?.empty_state_message || 'No farmer profiles or advisories have been created in the database yet. All KPIs are displaying real zero baseline counts.'}
+            </p>
+            <p className="text-[11px] text-sky-700 mt-2">
+              Tip: Set <code className="bg-sky-100 px-1 py-0.5 rounded font-mono font-bold">DEMO_DATA=true</code> in your backend environment to view simulated demo telemetry.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* KPI Cards Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         
@@ -127,10 +152,10 @@ export const FPODashboard: React.FC = () => {
             <Users className="w-4 h-4 text-agri-600" />
           </div>
           <div className="text-3xl font-black text-slate-900">
-            {fpoData?.kpi_metrics?.total_registered_farmers || 342}
+            {fpoData?.kpi_metrics?.total_registered_farmers ?? 0}
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            <strong className="text-emerald-700 font-semibold">{fpoData?.kpi_metrics?.active_farmers_this_month || 289}</strong> active this month ({fpoData?.kpi_metrics?.total_acreage_under_management || 845.5} acres)
+            <strong className="text-emerald-700 font-semibold">{fpoData?.kpi_metrics?.active_farmers_this_month ?? 0}</strong> active this month ({fpoData?.kpi_metrics?.total_acreage_under_management ?? 0} acres)
           </p>
         </div>
 
@@ -141,7 +166,11 @@ export const FPODashboard: React.FC = () => {
             <Droplets className="w-4 h-4 text-water-600" />
           </div>
           <div className="text-3xl font-black text-water-950">
-            3.84 <span className="text-lg font-bold text-water-700">M Litres</span>
+            {((fpoData?.kpi_metrics?.estimated_water_saved_litres || 0) >= 1000000)
+              ? ((fpoData?.kpi_metrics?.estimated_water_saved_litres || 0) / 1000000).toFixed(2)
+              : (fpoData?.kpi_metrics?.estimated_water_saved_litres || 0).toLocaleString()} <span className="text-lg font-bold text-water-700">
+                {(fpoData?.kpi_metrics?.estimated_water_saved_litres || 0) >= 1000000 ? 'M Litres' : 'Litres'}
+              </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
             Penman-Monteith rain offset avoided pumping
@@ -155,10 +184,10 @@ export const FPODashboard: React.FC = () => {
             <Zap className="w-4 h-4 text-amber-500" />
           </div>
           <div className="text-3xl font-black text-amber-950">
-            4,120 <span className="text-lg font-bold text-amber-700">kWh</span>
+            {(fpoData?.kpi_metrics?.estimated_energy_saved_kwh || 0).toLocaleString()} <span className="text-lg font-bold text-amber-700">kWh</span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            ~₹26,780 financial savings across cluster
+            ~₹{(fpoData?.kpi_metrics?.estimated_cost_saved_inr || 0).toLocaleString()} financial savings across cluster
           </p>
         </div>
 
@@ -169,10 +198,10 @@ export const FPODashboard: React.FC = () => {
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
           </div>
           <div className="text-3xl font-black text-emerald-700">
-            {fpoData?.kpi_metrics?.advisory_adherence_rate_pct || 82.4}%
+            {fpoData?.kpi_metrics?.advisory_adherence_rate_pct ?? 0}%
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Based on {fpoData?.kpi_metrics?.total_advisories_generated || 1420} generated advisories
+            Based on {fpoData?.kpi_metrics?.total_advisories_generated ?? 0} generated advisories
           </p>
         </div>
 
@@ -182,10 +211,10 @@ export const FPODashboard: React.FC = () => {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-extrabold text-slate-900 tracking-tight">
-            Village Disease Hotspots & Spatial Distribution
+            District Disease Hotspots & Spatial Distribution
           </h2>
           <span className="text-xs text-slate-500">
-            Centroid clusters aggregated to ensure individual farmer confidentiality
+            Aggregated to district level only to ensure individual farmer confidentiality
           </span>
         </div>
 

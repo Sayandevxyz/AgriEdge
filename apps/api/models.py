@@ -25,7 +25,10 @@ class User(Base):
     full_name = Column(String(120), nullable=False)
     phone_number = Column(String(30), nullable=True)
     role = Column(String(30), default="FARMER", nullable=False)  # FARMER, FPO_ADMIN, AGRONOMIST, SYSTEM_ADMIN
-    language_preference = Column(String(10), default="en")  # en, hi, ta, te, mr, bn, kn
+    language_preference = Column(String(10), default="en")  # en, hi, ta
+    consent_given = Column(Boolean, default=False, nullable=False)
+    consent_timestamp = Column(DateTime, nullable=True)
+    consent_version = Column(String(20), nullable=True)  # e.g., dpdp-v1.0
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=utc_now)
 
@@ -155,6 +158,9 @@ class Feedback(Base):
     yield_outcome_kg = Column(Float, nullable=True)
     farmer_comment = Column(Text, nullable=True)
     curated_for_retraining = Column(Boolean, default=False)
+    curated_by = Column(String(120), nullable=True)
+    curation_notes = Column(Text, nullable=True)
+    curated_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=utc_now)
 
     advisory = relationship("Advisory", back_populates="feedbacks")

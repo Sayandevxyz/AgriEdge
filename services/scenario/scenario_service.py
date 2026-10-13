@@ -68,6 +68,50 @@ class ScenarioAgent:
         reduced_water = round(base_calc["gross_volume_litres"] * 0.8)
         reduced_energy = calculate_pump_energy_and_cost(volume_litres=reduced_water, pump_hp=pump_hp)
 
+        # Scenario 5: Heatwave Stress (ET0 +20%)
+        heatwave_et0 = round(et0_mm * 1.20, 2)
+        heatwave_calc = calculate_irrigation_requirement(
+            et0_mm_day=heatwave_et0,
+            crop_key=crop,
+            growth_stage=growth_stage,
+            farm_acres=farm_acres,
+            forecast_rainfall_24h_mm=forecast_rain_24h_mm,
+            forecast_rainfall_48h_mm=forecast_rain_48h_mm
+        )
+        heatwave_energy = calculate_pump_energy_and_cost(
+            volume_litres=heatwave_calc["gross_volume_litres"],
+            pump_hp=pump_hp
+        )
+
+        # Scenario 6: Drought (7-day zero rain)
+        drought_calc = calculate_irrigation_requirement(
+            et0_mm_day=et0_mm,
+            crop_key=crop,
+            growth_stage=growth_stage,
+            farm_acres=farm_acres,
+            forecast_rainfall_24h_mm=0.0,
+            forecast_rainfall_48h_mm=0.0
+        )
+        drought_energy = calculate_pump_energy_and_cost(
+            volume_litres=drought_calc["gross_volume_litres"],
+            pump_hp=pump_hp
+        )
+
+        # Scenario 7: Power Outage (Diesel Pump Fallback)
+        diesel_energy = calculate_pump_energy_and_cost(
+            volume_litres=ai_calc["gross_volume_litres"],
+            pump_hp=pump_hp,
+            pump_type="diesel"
+        )
+
+        # Scenario 8: Electric -> Solar Pump Conversion (₹0/kWh grid tariff)
+        solar_energy = calculate_pump_energy_and_cost(
+            volume_litres=ai_calc["gross_volume_litres"],
+            pump_hp=pump_hp,
+            pump_type="electric",
+            electricity_tariff_inr_kwh=0.0
+        )
+
         scenarios_list = [
             {
                 "id": "conventional_habit",
@@ -112,6 +156,50 @@ class ScenarioAgent:
                 "risk_level": "LOW_TO_MODERATE",
                 "risk_reason": "Moderate water saving; good intermediate safety buffer.",
                 "is_recommended": False
+            },
+            {
+                "id": "heatwave_stress",
+                "title": "Heatwave Stress (ET₀ +20%)",
+                "description": f"Simulates thermal heatwave where evaporative atmospheric demand spikes to {heatwave_et0} mm/day.",
+                "water_litres": heatwave_calc["gross_volume_litres"],
+                "energy_kwh": heatwave_energy["energy_consumed"],
+                "cost_inr": heatwave_energy["estimated_cost_inr"],
+                "risk_level": "HIGH",
+                "risk_reason": "Atmospheric demand spikes; crop water consumption increases by ~20%.",
+                "is_recommended": False
+            },
+            {
+                "id": "drought_7d",
+                "title": "Drought Stress (7 Days Zero Rain)",
+                "description": "Simulates complete dry spell with 0mm precipitation over a 7-day period.",
+                "water_litres": drought_calc["gross_volume_litres"],
+                "energy_kwh": drought_energy["energy_consumed"],
+                "cost_inr": drought_energy["estimated_cost_inr"],
+                "risk_level": "MODERATE_TO_HIGH",
+                "risk_reason": "Zero natural precipitation offset; requires 100% supplemental aquifer pumping.",
+                "is_recommended": False
+            },
+            {
+                "id": "power_outage_diesel",
+                "title": "Power Outage (Diesel Pump Fallback)",
+                "description": "Grid power outage; irrigation powered by backup diesel engine set.",
+                "water_litres": ai_calc["gross_volume_litres"],
+                "energy_kwh": diesel_energy["energy_consumed"],
+                "cost_inr": diesel_energy["estimated_cost_inr"],
+                "risk_level": "HIGH_COST",
+                "risk_reason": f"Operational expense increases significantly due to diesel fuel costs (₹92/L).",
+                "is_recommended": False
+            },
+            {
+                "id": "solar_pump_conversion",
+                "title": "Electric → Solar Pump Conversion",
+                "description": "Upgrades pump to off-grid Solar PV direct pumping at zero recurring tariff (₹0/kWh).",
+                "water_litres": ai_calc["gross_volume_litres"],
+                "energy_kwh": solar_energy["energy_consumed"],
+                "cost_inr": solar_energy["estimated_cost_inr"],
+                "risk_level": "VERY_LOW",
+                "risk_reason": "Zero operational electricity tariff (₹0/kWh) and daylight-synchronized irrigation.",
+                "is_recommended": True
             }
         ]
 

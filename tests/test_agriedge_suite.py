@@ -253,10 +253,11 @@ async def test_local_vision_provider_lesion_detection():
 
 @pytest.mark.asyncio
 async def test_automated_crop_classification():
-    """Verify AI automatically identifies crop species from leaf imagery without user input."""
+    """Verify crop classification uses image content, caps heuristic confidence at 0.60,
+    and proves renaming a file to 'tomato.jpg' does not change the result."""
     from services.vision.vision_service import CropClassifier
 
-    # 1. Elongated monocot leaf geometry (Aspect ratio > 2.5) -> Rice / Paddy
+    # 1. Elongated monocot leaf geometry (Aspect ratio > 2.5) -> Rice / Wheat
     rice_arr = np.zeros((400, 120, 3), dtype=np.uint8)
     rice_arr[:, :, 1] = 175  # Strong green channel
     rice_arr[:, :, 0] = 70
@@ -267,17 +268,21 @@ async def test_automated_crop_classification():
 
     rice_result = CropClassifier.classify_crop(buf_rice.getvalue())
     assert rice_result["crop"] in ["Rice", "Wheat"]
-    assert rice_result["confidence"] >= 0.85
+    # In heuristic mode without AI key, confidence is honestly capped at 0.60
+    assert rice_result["confidence"] <= 0.60
+    assert rice_result["requires_agronomist_verification"] is True
+    assert rice_result["is_heuristic"] is True
     assert "family" in rice_result
     assert "variety_suggestion" in rice_result
 
-    # 2. Filename / sample hints correctly parsed
-    tomato_result = CropClassifier.classify_crop(buf_rice.getvalue(), filename_hint="tomato_leaf_sample.jpg")
-    assert tomato_result["crop"] == "Tomato"
-    assert tomato_result["crop_key"] == "tomato"
-    assert tomato_result["confidence"] >= 0.90
+    # 2. PROOF: Renaming a file to "tomato.jpg" does NOT change the result
+    renamed_result = CropClassifier.classify_crop(buf_rice.getvalue(), filename_hint="tomato.jpg")
+    assert renamed_result["crop"] == rice_result["crop"]
+    assert renamed_result["crop"] != "Tomato"
+    assert renamed_result["confidence"] <= 0.60
+    assert renamed_result["requires_agronomist_verification"] is True
 
-    # 4. Maize Field canopy auto-detection (outdoor landscape with tall upright stalks and ribbon leaves)
+    # 3. Maize Field canopy auto-detection
     from PIL import ImageDraw
     maize_img = Image.new("RGB", (400, 400), color=(135, 206, 235))
     draw = ImageDraw.Draw(maize_img)
@@ -289,9 +294,9 @@ async def test_automated_crop_classification():
     maize_img.save(buf_maize, format="JPEG")
 
     maize_result = CropClassifier.classify_crop(buf_maize.getvalue())
-    assert maize_result["crop"] == "Maize"
-    assert maize_result["crop_key"] == "maize"
-    assert maize_result["confidence"] >= 0.85
+    assert maize_result["crop"] in ["Maize", "Wheat", "Rice"]
+    assert maize_result["confidence"] <= 0.60
+    assert maize_result["requires_agronomist_verification"] is True
 
     # 5. Maize Disease Detection via LocalVisionProvider
     provider = LocalVisionProvider()
@@ -390,7 +395,7 @@ def test_scenario_simulation_comparison():
 # ----------------------------------------------------
 
 def test_outcome_agent_evaluation_curation():
-    """High efficacy feedback with clear farmer comment should be flagged for agronomist curation."""
+    """Verify length heuristic is removed: high efficacy feedback defaults to False until agronomist curates."""
     eval_res = OutcomeAgent.evaluate_outcome(
         advisory_id="adv_test_101",
         predicted_action="SKIP IRRIGATION",
@@ -400,7 +405,8 @@ def test_outcome_agent_evaluation_curation():
     )
     assert eval_res["adherence"] is True
     assert eval_res["efficacy_score"] >= 80.0
-    assert eval_res["curated_for_retraining_pool"] is True
+    assert eval_res["curated_for_retraining_pool"] is False
+    assert eval_res["validation_status"] == "PENDING_AGRONOMIST_CURATION"
 
 
 def test_feedback_service_recording():

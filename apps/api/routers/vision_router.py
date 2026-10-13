@@ -24,7 +24,8 @@ ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
     dependencies=[Depends(rate_limit(max_requests=20, window_seconds=60, key_prefix="vision_detect"))]
 )
 async def detect_crop_endpoint(
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user)
 ):
     """
     Automated AI Crop Analyzer:
@@ -32,6 +33,16 @@ async def detect_crop_endpoint(
     suggested variety, and morphological features directly from uploaded leaf imagery.
     Removes the burden of manual crop selection from the farmer.
     """
+    # DPDP Consent Enforcement
+    if not current_user.consent_given:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "CONSENT_REQUIRED",
+                "message": "User consent under the DPDP Act is required before uploading or processing crop images."
+            }
+        )
+
     if file.content_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -51,9 +62,9 @@ async def detect_crop_endpoint(
             }
         )
 
+    # Content-based classification without filename hints
     detection_result = await vision_agent.detect_crop(
-        image_bytes=image_bytes,
-        filename_hint=file.filename
+        image_bytes=image_bytes
     )
 
     is_crop = detection_result.get("is_crop", True)
@@ -61,6 +72,9 @@ async def detect_crop_endpoint(
         "success": is_crop is not False,
         "is_crop": is_crop is not False,
         "detection": detection_result,
+        "requires_agronomist_verification": detection_result.get("requires_agronomist_verification", False),
+        "is_heuristic": detection_result.get("is_heuristic", False),
+        "badge": detection_result.get("badge"),
         "error": detection_result.get("error_message") if is_crop is False else None
     }
 
@@ -83,6 +97,16 @@ async def analyze_crop_image_endpoint(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    # DPDP Consent Enforcement
+    if not current_user.consent_given:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "CONSENT_REQUIRED",
+                "message": "User consent under the DPDP Act is required before uploading or processing crop images."
+            }
+        )
+
     # 1. MIME type validation
     if file.content_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
@@ -106,8 +130,7 @@ async def analyze_crop_image_endpoint(
 
     # 3. Always verify crop presence first to prevent fake analysis on non-crop images
     detected_crop_data = await vision_agent.detect_crop(
-        image_bytes=image_bytes,
-        filename_hint=file.filename
+        image_bytes=image_bytes
     )
     if detected_crop_data and detected_crop_data.get("is_crop") is False:
         raise HTTPException(
