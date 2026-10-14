@@ -212,6 +212,7 @@ export const SignupPage: React.FC = () => {
               <input
                 type="text"
                 required
+                autoComplete="name"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="e.g. Ramesh Kumar"
@@ -229,6 +230,7 @@ export const SignupPage: React.FC = () => {
               <input
                 type="email"
                 required
+                autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="e.g. ramesh.kumar@example.com"
@@ -327,6 +329,7 @@ export const SignupPage: React.FC = () => {
                 <input
                   type="password"
                   required
+                  autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Min. 8 characters (letters + numbers)"
@@ -344,6 +347,7 @@ export const SignupPage: React.FC = () => {
                 <input
                   type="password"
                   required
+                  autoComplete="new-password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Re-enter password"
