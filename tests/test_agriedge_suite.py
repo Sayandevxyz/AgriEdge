@@ -1,21 +1,3 @@
-"""
-AgriEdge Comprehensive Automated Test Suite
-Includes 25+ deterministic tests for:
-- FAO-56 Penman-Monteith ET0, Kc, ETc
-- Effective rainfall (USDA SCS method)
-- Irrigation requirement triage and water savings
-- Pump electric & diesel energy calculations
-- Image quality validation (sharpness, brightness, resolution)
-- Local optical disease detection
-- Crop growth stage phenology
-- Weather & rainfall hazard analysis
-- Knowledge RAG retrieval & sanitization
-- Multi-agent advisory synthesis
-- Scenario simulation
-- Feedback loop & Outcome Agent evaluation
-- Authentication & JWT issuance
-"""
-
 import io
 import pytest
 from PIL import Image
@@ -39,10 +21,6 @@ from apps.api.auth import hash_password, verify_password, create_access_token, c
 import jwt
 from apps.api.config import settings
 
-
-# ----------------------------------------------------
-# 1. FAO-56 Evapotranspiration & Irrigation Tests
-# ----------------------------------------------------
 
 def test_fao56_et0_standard_conditions():
     """Verify ET0 produces expected standard warm-temperate evapotranspiration range (3.0 - 7.0 mm/day)."""
