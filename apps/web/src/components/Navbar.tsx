@@ -3,7 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useOfflineSync } from '../context/OfflineSyncContext';
-import { Languages, Wifi, WifiOff, RefreshCw, LogOut, Sprout, LayoutDashboard, ShieldAlert } from 'lucide-react';
+import { Languages, Wifi, WifiOff, RefreshCw, LogOut, Sprout, LayoutDashboard, ShieldAlert, Sparkles } from 'lucide-react';
 import { LanguageCode } from '../types';
 
 export const Navbar: React.FC = () => {
@@ -174,13 +174,21 @@ export const Navbar: React.FC = () => {
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => navigate('/login')}
-                  className="text-xs font-semibold text-slate-700 hover:text-agri-800 hover:bg-slate-100 px-2.5 py-1.5 rounded-lg transition"
+                  className="text-xs font-semibold text-slate-700 hover:text-agri-800 hover:bg-slate-100 px-2.5 py-1.5 rounded-lg transition cursor-pointer"
                 >
                   Sign In
                 </button>
                 <button
+                  onClick={() => navigate('/login')}
+                  className="hidden sm:inline-flex items-center gap-1 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1.5 rounded-lg transition shadow-xs cursor-pointer"
+                  title="Explore with 1-click Demo Accounts"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                  Demo Login
+                </button>
+                <button
                   onClick={() => navigate('/signup')}
-                  className="text-xs font-bold bg-agri-600 hover:bg-agri-700 text-white px-3 py-1.5 rounded-lg shadow-sm transition"
+                  className="text-xs font-bold bg-agri-600 hover:bg-agri-700 text-white px-3 py-1.5 rounded-lg shadow-sm transition cursor-pointer"
                 >
                   Sign Up
                 </button>

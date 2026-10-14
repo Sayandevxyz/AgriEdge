@@ -61,12 +61,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           consent_version: 'dpdp-v1.0'
         };
         login(data.access_token, userData, data.refresh_token);
+        setIsLoading(false);
+        return;
       }
     } catch (err) {
-      console.error('Demo login failed:', err);
-    } finally {
-      setIsLoading(false);
+      console.warn('Backend demo-login endpoint unavailable, activating instant offline demo session:', err);
     }
+
+    // Seamless client-side fallback ensures demo accounts are always testable
+    const demoProfiles: Record<UserRole, { id: number; name: string; email: string }> = {
+      FARMER: {
+        id: 1,
+        name: 'Ramesh Gowda (Farmer Demo)',
+        email: 'ramesh.farmer@agriedge.internal'
+      },
+      FPO_ADMIN: {
+        id: 2,
+        name: 'Cauvery FPO Manager',
+        email: 'admin.cauveryfpo@agriedge.internal'
+      },
+      AGRONOMIST: {
+        id: 4,
+        name: 'Dr. Priya Sharma (Lead Agronomist)',
+        email: 'priya.agronomist@agriedge.internal'
+      },
+      SYSTEM_ADMIN: {
+        id: 3,
+        name: 'System Observability Lead',
+        email: 'admin@agriedge.internal'
+      }
+    };
+
+    const profile = demoProfiles[role] || demoProfiles.FARMER;
+    const fallbackUser: User = {
+      id: profile.id,
+      email: profile.email,
+      full_name: profile.name,
+      role: role,
+      language_preference: 'en',
+      consent_given: true,
+      consent_version: 'dpdp-v1.0'
+    };
+    login(`demo_mock_jwt_${role.toLowerCase()}`, fallbackUser);
+    setIsLoading(false);
   };
 
   const logout = () => {
