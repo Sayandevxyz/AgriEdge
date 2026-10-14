@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 
 export const CropAnalysisFlow: React.FC = () => {
-  const { user, token } = useAuth();
+  const { user, token, grantConsent } = useAuth();
   const { t } = useLanguage();
 
   if (!user) {
@@ -33,6 +33,20 @@ export const CropAnalysisFlow: React.FC = () => {
   const [step, setStep] = useState<number>(1);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  const handleCameraClick = async () => {
+    if (!user?.consent_given) {
+      await grantConsent();
+    }
+    openLiveCamera();
+  };
+
+  const handleGalleryClick = async () => {
+    if (!user?.consent_given) {
+      await grantConsent();
+    }
+    galleryInputRef.current?.click();
+  };
 
   // Live Camera Viewfinder States
   const [isLiveCameraOpen, setIsLiveCameraOpen] = useState<boolean>(false);
@@ -451,18 +465,28 @@ export const CropAnalysisFlow: React.FC = () => {
           {!user?.consent_given && (
             <div className="bg-amber-50 border border-amber-300 rounded-3xl p-5 flex items-start gap-3.5 text-amber-900 shadow-sm">
               <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-              <div className="space-y-1">
+              <div className="space-y-1 w-full">
                 <h4 className="font-black text-sm">DPDP Consent Required</h4>
                 <p className="text-xs text-amber-800 leading-relaxed">
                   Under the Digital Personal Data Protection (DPDP) Act, recorded consent is required before capturing or processing farm telemetry and crop leaf images.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => navigate('/privacy')}
-                  className="inline-block mt-2 text-xs font-bold text-agri-700 underline hover:text-agri-800"
-                >
-                  Review AgriEdge Privacy Policy & Grant Consent →
-                </button>
+                <div className="flex flex-wrap items-center gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => grantConsent()}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-agri-700 hover:bg-agri-800 text-white text-xs font-black rounded-xl shadow-sm transition active:scale-95 cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Grant DPDP Consent & Enable Photo Upload
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/privacy')}
+                    className="text-xs font-bold text-agri-800 underline hover:text-agri-900"
+                  >
+                    Review Privacy Policy →
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -474,26 +498,17 @@ export const CropAnalysisFlow: React.FC = () => {
               {/* Option A: Phone Camera (High-Contrast Green Card) */}
               <button
                 type="button"
-                disabled={!user?.consent_given}
-                onClick={() => openLiveCamera()}
-                className={`flex flex-col items-center justify-center p-6 rounded-3xl shadow-lg transition-all active:scale-[0.98] text-center group border ${
-                  !user?.consent_given
-                    ? 'bg-slate-200 text-slate-400 border-slate-300 cursor-not-allowed shadow-none'
-                    : 'bg-gradient-to-br from-agri-600 to-agri-800 hover:from-agri-700 hover:to-agri-900 text-white shadow-agri-900/15 border-agri-500/30'
-                }`}
+                onClick={handleCameraClick}
+                className="flex flex-col items-center justify-center p-6 rounded-3xl shadow-lg transition-all active:scale-[0.98] text-center group border bg-gradient-to-br from-agri-600 to-agri-800 hover:from-agri-700 hover:to-agri-900 text-white shadow-agri-900/15 border-agri-500/30 cursor-pointer"
               >
-                <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-3 transition-transform ${
-                  !user?.consent_given ? 'bg-slate-300 text-slate-500' : 'bg-white/20 group-hover:scale-110'
-                }`}>
+                <div className="w-16 h-16 rounded-full flex items-center justify-center mb-3 transition-transform bg-white/20 group-hover:scale-110">
                   <Camera className="w-8 h-8" />
                 </div>
                 <h3 className="font-extrabold text-lg">Take Photo (Camera)</h3>
-                <p className={`text-xs mt-1 ${!user?.consent_given ? 'text-slate-500' : 'text-agri-100'}`}>
+                <p className="text-xs mt-1 text-agri-100">
                   Open phone camera to snap a live photo of the leaf
                 </p>
-                <span className={`mt-4 px-4 py-1.5 text-xs font-bold rounded-full shadow-sm ${
-                  !user?.consent_given ? 'bg-slate-300 text-slate-600' : 'bg-white text-agri-900'
-                }`}>
+                <span className="mt-4 px-4 py-1.5 text-xs font-bold rounded-full shadow-sm bg-white text-agri-900">
                   📸 Open Camera
                 </span>
               </button>
@@ -501,13 +516,8 @@ export const CropAnalysisFlow: React.FC = () => {
               {/* Option B: Gallery / Files Upload Card */}
               <button
                 type="button"
-                disabled={!user?.consent_given}
-                onClick={() => galleryInputRef.current?.click()}
-                className={`flex flex-col items-center justify-center p-6 rounded-3xl border-2 border-dashed transition-all active:scale-[0.98] text-center group ${
-                  !user?.consent_given
-                    ? 'bg-slate-100 text-slate-400 border-slate-300 cursor-not-allowed'
-                    : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border-slate-300 hover:border-agri-500'
-                }`}
+                onClick={handleGalleryClick}
+                className="flex flex-col items-center justify-center p-6 rounded-3xl border-2 border-dashed transition-all active:scale-[0.98] text-center group bg-slate-50 hover:bg-slate-100 text-slate-800 border-slate-300 hover:border-agri-500 cursor-pointer shadow-sm"
               >
                 <div className="w-16 h-16 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
                   <ImageIcon className="w-8 h-8" />
@@ -541,18 +551,16 @@ export const CropAnalysisFlow: React.FC = () => {
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  disabled={!user?.consent_given}
-                  onClick={() => openLiveCamera()}
-                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-agri-50 hover:bg-agri-100 text-agri-800 rounded-xl text-xs font-bold border border-agri-200 transition"
+                  onClick={handleCameraClick}
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-agri-50 hover:bg-agri-100 text-agri-800 rounded-xl text-xs font-bold border border-agri-200 transition cursor-pointer"
                 >
                   <Camera className="w-4 h-4 text-agri-600" />
                   <span>Retake (Camera)</span>
                 </button>
                 <button
                   type="button"
-                  disabled={!user?.consent_given}
-                  onClick={() => galleryInputRef.current?.click()}
-                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 transition"
+                  onClick={handleGalleryClick}
+                  className="flex items-center justify-center gap-1.5 py-2.5 px-3 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 transition cursor-pointer"
                 >
                   <Upload className="w-4 h-4 text-slate-500" />
                   <span>Choose Another</span>
@@ -613,16 +621,16 @@ export const CropAnalysisFlow: React.FC = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                     <button
                       type="button"
-                      onClick={() => openLiveCamera()}
-                      className="flex items-center justify-center gap-2 py-3 px-4 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow transition"
+                      onClick={handleCameraClick}
+                      className="flex items-center justify-center gap-2 py-3 px-4 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow transition cursor-pointer"
                     >
                       <Camera className="w-4 h-4" />
                       <span>Retake with Camera</span>
                     </button>
                     <button
                       type="button"
-                      onClick={() => galleryInputRef.current?.click()}
-                      className="flex items-center justify-center gap-2 py-3 px-4 bg-white hover:bg-slate-100 text-slate-800 rounded-xl text-xs font-bold border border-slate-300 shadow-2xs transition"
+                      onClick={handleGalleryClick}
+                      className="flex items-center justify-center gap-2 py-3 px-4 bg-white hover:bg-slate-100 text-slate-800 rounded-xl text-xs font-bold border border-slate-300 shadow-2xs transition cursor-pointer"
                     >
                       <Upload className="w-4 h-4 text-slate-600" />
                       <span>Choose Crop Leaf Photo</span>

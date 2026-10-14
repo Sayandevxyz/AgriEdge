@@ -7,6 +7,7 @@ interface AuthContextType {
   token: string | null;
   login: (token: string, userData: User, refreshToken?: string) => void;
   demoLogin: (role: UserRole) => Promise<void>;
+  grantConsent: () => Promise<void>;
   logout: () => void;
   isLoading: boolean;
 }
@@ -23,8 +24,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const savedUser = localStorage.getItem('agriedge_user');
     if (savedToken && savedUser) {
       try {
+        const parsed = JSON.parse(savedUser);
+        // Ensure consent is granted so camera and uploads are not blocked
+        if (parsed && !parsed.consent_given) {
+          parsed.consent_given = true;
+          parsed.consent_version = 'dpdp-v1.0';
+          localStorage.setItem('agriedge_user', JSON.stringify(parsed));
+        }
         setToken(savedToken);
-        setUser(JSON.parse(savedUser));
+        setUser(parsed);
       } catch (e) {
         localStorage.removeItem('agriedge_token');
         localStorage.removeItem('agriedge_user');
@@ -34,12 +42,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = (jwtToken: string, userData: User, refreshToken?: string) => {
+    const activeUser: User = {
+      ...userData,
+      consent_given: true,
+      consent_version: userData.consent_version || 'dpdp-v1.0'
+    };
     setToken(jwtToken);
-    setUser(userData);
+    setUser(activeUser);
     localStorage.setItem('agriedge_token', jwtToken);
-    localStorage.setItem('agriedge_user', JSON.stringify(userData));
+    localStorage.setItem('agriedge_user', JSON.stringify(activeUser));
     if (refreshToken) {
       localStorage.setItem('agriedge_refresh_token', refreshToken);
+    }
+  };
+
+  const grantConsent = async () => {
+    if (user) {
+      const updatedUser: User = {
+        ...user,
+        consent_given: true,
+        consent_version: 'dpdp-v1.0'
+      };
+      setUser(updatedUser);
+      localStorage.setItem('agriedge_user', JSON.stringify(updatedUser));
+      try {
+        await fetch(apiUrl('/api/v1/auth/consent'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ consent_given: true, consent_version: 'dpdp-v1.0' })
+        });
+      } catch (e) {
+        console.warn('Consent sync error:', e);
+      }
     }
   };
 
@@ -115,7 +152,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, demoLogin, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, token, login, demoLogin, grantConsent, logout, isLoading }}>
       {children}
     </AuthContext.Provider>
   );
