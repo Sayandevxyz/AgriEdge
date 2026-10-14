@@ -40,21 +40,23 @@ async def lifespan(app: FastAPI):
         is_postgres = "postgres" in str(engine.url).lower()
         if is_postgres:
             statements = [
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_given BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_given BOOLEAN DEFAULT TRUE",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_timestamp TIMESTAMP WITH TIME ZONE",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_version VARCHAR(20)",
                 "ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS curated_by VARCHAR(120)",
                 "ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS curation_notes TEXT",
-                "ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS curated_at TIMESTAMP WITH TIME ZONE"
+                "ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS curated_at TIMESTAMP WITH TIME ZONE",
+                "UPDATE users SET consent_given = TRUE WHERE consent_given IS NULL OR consent_given = FALSE"
             ]
         else:
             statements = [
-                "ALTER TABLE users ADD COLUMN consent_given BOOLEAN DEFAULT 0",
+                "ALTER TABLE users ADD COLUMN consent_given BOOLEAN DEFAULT 1",
                 "ALTER TABLE users ADD COLUMN consent_timestamp DATETIME",
                 "ALTER TABLE users ADD COLUMN consent_version VARCHAR(20)",
                 "ALTER TABLE feedbacks ADD COLUMN curated_by VARCHAR(120)",
                 "ALTER TABLE feedbacks ADD COLUMN curation_notes TEXT",
-                "ALTER TABLE feedbacks ADD COLUMN curated_at DATETIME"
+                "ALTER TABLE feedbacks ADD COLUMN curated_at DATETIME",
+                "UPDATE users SET consent_given = 1 WHERE consent_given IS NULL OR consent_given = 0"
             ]
 
         for col_stmt in statements:

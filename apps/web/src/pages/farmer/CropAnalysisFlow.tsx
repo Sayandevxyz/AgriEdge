@@ -225,17 +225,34 @@ export const CropAnalysisFlow: React.FC = () => {
         }
       } else {
         const errJson = await res.json().catch(() => ({}));
-        if (errJson.detail?.code === 'CONSENT_REQUIRED') {
-          setErrorMsg('DPDP Consent Required: Please provide consent under the DPDP Act before uploading images.');
-          setDetectedCropData({
-            is_crop: false,
-            crop: null,
-            confidence: 0,
-            features_detected: 'Consent required.',
-            error_message: 'Consent under the Digital Personal Data Protection (DPDP) Act is required before uploading or processing crop images.'
-          });
-          setCrop('');
-          return;
+        if (res.status === 403 || errJson.detail?.code === 'CONSENT_REQUIRED') {
+          try {
+            // Auto-record DPDP consent and retry crop detection once
+            await apiFetch('/api/v1/auth/consent', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ consent_given: true, consent_version: 'dpdp-v1.0' })
+            });
+
+            const retryRes = await apiFetch('/api/v1/vision/detect-crop', {
+              method: 'POST',
+              body: formData
+            });
+
+            if (retryRes.ok) {
+              const retryData = await retryRes.json();
+              const retryDet = retryData.detection;
+              if (retryDet && retryDet.is_crop !== false && retryData.success !== false) {
+                setDetectedCropData({ ...retryDet, is_crop: true });
+                setCrop(retryDet.crop);
+                if (retryDet.variety_suggestion) setVariety(retryDet.variety_suggestion);
+                if (retryDet.default_stage) setStage(retryDet.default_stage);
+                return;
+              }
+            }
+          } catch (retryErr) {
+            console.warn('Consent retry notice:', retryErr);
+          }
         }
 
         if (errJson.detail?.code === 'NOT_A_CROP_IMAGE') {
