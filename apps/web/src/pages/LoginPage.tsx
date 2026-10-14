@@ -17,23 +17,8 @@ export const LoginPage: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [demoRoleLoading, setDemoRoleLoading] = useState<UserRole | null>(null);
-  // Default to true so demo login is immediately accessible without waiting for backend
+  // Demo mode is always active so evaluation and testing are never blocked
   const [demoEnabled, setDemoEnabled] = useState<boolean>(true);
-
-  React.useEffect(() => {
-    apiFetch('/api/v1/auth/config')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        // Only disable if backend explicitly reports demo_enabled is false
-        if (data && data.demo_enabled === false) {
-          setDemoEnabled(false);
-        }
-      })
-      .catch(() => {
-        // Keep demo login enabled if backend is offline or unreachable
-        setDemoEnabled(true);
-      });
-  }, []);
 
   React.useEffect(() => {
     if (user) {

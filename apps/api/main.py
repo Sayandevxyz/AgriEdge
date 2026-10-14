@@ -4,7 +4,8 @@ AgriEdge Core FastAPI Application Entrypoint
 """
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from apps.api.config import settings
 from apps.api.database import engine, Base, SessionLocal
@@ -33,22 +34,38 @@ async def lifespan(app: FastAPI):
     # 1. Create all database tables on configured engine (PostgreSQL / SQLite)
     Base.metadata.create_all(bind=engine)
 
-    # 1b. Non-destructive column additions for existing local SQLite databases
+    # 1b. Non-destructive column additions for existing PostgreSQL and SQLite databases
     with engine.connect() as conn:
         from sqlalchemy import text
-        for col_stmt in [
-            "ALTER TABLE users ADD COLUMN consent_given BOOLEAN DEFAULT 0",
-            "ALTER TABLE users ADD COLUMN consent_timestamp DATETIME",
-            "ALTER TABLE users ADD COLUMN consent_version VARCHAR(20)",
-            "ALTER TABLE feedbacks ADD COLUMN curated_by VARCHAR(120)",
-            "ALTER TABLE feedbacks ADD COLUMN curation_notes TEXT",
-            "ALTER TABLE feedbacks ADD COLUMN curated_at DATETIME"
-        ]:
+        is_postgres = "postgres" in str(engine.url).lower()
+        if is_postgres:
+            statements = [
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_given BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_timestamp TIMESTAMP WITH TIME ZONE",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS consent_version VARCHAR(20)",
+                "ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS curated_by VARCHAR(120)",
+                "ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS curation_notes TEXT",
+                "ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS curated_at TIMESTAMP WITH TIME ZONE"
+            ]
+        else:
+            statements = [
+                "ALTER TABLE users ADD COLUMN consent_given BOOLEAN DEFAULT 0",
+                "ALTER TABLE users ADD COLUMN consent_timestamp DATETIME",
+                "ALTER TABLE users ADD COLUMN consent_version VARCHAR(20)",
+                "ALTER TABLE feedbacks ADD COLUMN curated_by VARCHAR(120)",
+                "ALTER TABLE feedbacks ADD COLUMN curation_notes TEXT",
+                "ALTER TABLE feedbacks ADD COLUMN curated_at DATETIME"
+            ]
+
+        for col_stmt in statements:
             try:
                 conn.execute(text(col_stmt))
                 conn.commit()
-            except Exception:
-                pass
+            except Exception as e:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
 
     # 2. Seed development records ONLY when APP_MODE == "development" (in production seed nothing)
     if settings.APP_MODE == "development":
@@ -208,11 +225,38 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
-    allow_origin_regex=settings.CORS_ORIGIN_REGEX if settings.CORS_ORIGIN_REGEX else None,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    error_trace = traceback.format_exc()
+    print(f"[AgriEdge 500 Error] {request.method} {request.url.path}: {exc}\n{error_trace}")
+
+    origin = request.headers.get("origin")
+    headers = {}
+    if origin:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+        headers["Access-Control-Allow-Methods"] = "*"
+        headers["Access-Control-Allow-Headers"] = "*"
+
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": {
+                "code": "INTERNAL_SERVER_ERROR",
+                "message": f"Server error: {str(exc)}"
+            }
+        },
+        headers=headers
+    )
 
 # Mount Health Check Endpoints
 app.include_router(health_router)

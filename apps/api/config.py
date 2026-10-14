@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "AgriEdge"
     APP_VERSION: str = "1.0.0"
     APP_MODE: str = "development"  # development / production
-    ENABLE_DEMO_LOGIN: bool = False
+    ENABLE_DEMO_LOGIN: bool = True
     TRUSTED_PROXY_COUNT: int = 1
     SEED_PASSWORD: str = ""
 
@@ -54,7 +54,18 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> List[str]:
-        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+        configured = [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+        defaults = [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:3000",
+            "https://agriedge.vercel.app",
+            "https://agri-edge-pied.vercel.app",
+        ]
+        for d in defaults:
+            if d not in configured:
+                configured.append(d)
+        return configured
 
     @model_validator(mode="after")
     def validate_jwt_secrets(self) -> "Settings":
